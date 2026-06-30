@@ -357,13 +357,14 @@
 
       <div class="tarjeta carga-big">
         <div class="fila2">
-          <div class="campo-form"><label>📅 Fecha</label><input type="date" id="c-fecha"></div>
-          <div class="campo-form autobox"><label>🌱 Cultivo</label><input id="c-cultivo" placeholder="Ej: Soja" autocomplete="off" oninput="autoc('cultivo',this)"><div class="sugerencias" id="sug-cultivo"></div></div>
+          <div class="campo-form"><label>📅 Fecha</label><input type="date" id="c-fecha" oninput="guardarComun('fecha',this.value)" onchange="guardarComun('fecha',this.value)"></div>
+          <div class="campo-form autobox"><label>🌱 Cultivo</label><input id="c-cultivo" placeholder="Ej: Soja" autocomplete="off" oninput="autoc('cultivo',this);guardarComun('cultivo',this.value)"><div class="sugerencias" id="sug-cultivo"></div></div>
         </div>
         <div class="fila2">
-          <div class="campo-form autobox"><label>🏡 Campo</label><input id="c-campo" placeholder="Ej: La Elisa" autocomplete="off" oninput="autoc('campo',this)"><div class="sugerencias" id="sug-campo"></div></div>
-          <div class="campo-form autobox"><label>📍 Lote</label><input id="c-lote" placeholder="Ej: Lote 4" autocomplete="off" oninput="autoc('lote',this)"><div class="sugerencias" id="sug-lote"></div></div>
+          <div class="campo-form autobox"><label>🏡 Campo</label><input id="c-campo" placeholder="Ej: La Elisa" autocomplete="off" oninput="autoc('campo',this);guardarComun('campo',this.value)"><div class="sugerencias" id="sug-campo"></div></div>
+          <div class="campo-form autobox"><label>📍 Lote</label><input id="c-lote" placeholder="Ej: Lote 4" autocomplete="off" oninput="autoc('lote',this);guardarComun('lote',this.value)"><div class="sugerencias" id="sug-lote"></div></div>
         </div>
+        <p class="sub" style="margin:2px 0 0;font-size:12px">🔗 Estos datos se comparten con todos en tiempo real.</p>
       </div>
 
       <div id="zona-sin-abierto">
@@ -597,7 +598,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-let usuarios={}, registros={}, abiertos={};
+let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
 let tipoElegido=null;     // 'camion' | 'bolson'
@@ -641,7 +642,7 @@ function iniciar(){
       try{ firebase.database().setPersistenceEnabled(true); }catch(e){}
       db=firebase.database();
       // Mantener sincronizadas estas ramas aunque se corte el internet
-      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); }catch(e){}
+      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); }catch(e){}
       auth=firebase.auth();
       // Si ya hay sesión anónima guardada (de una entrada previa con señal), arranca aunque esté offline
       auth.onAuthStateChanged(u=>{ if(u){ firebaseOK=true; escucharConexion(); escucharDatos(); } });
@@ -683,6 +684,7 @@ function escucharDatos(){
   db.ref('usuarios').on('value',s=>{usuarios=s.val()||{}; if(!listo)arrancar(); else { refrescarSesion(); renderTodo(); }});
   db.ref('registros').on('value',s=>{registros=s.val()||{}; renderTodo();});
   db.ref('abiertos').on('value',s=>{abiertos=s.val()||{}; renderCarga();});
+  db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes();});
   setTimeout(arrancar,5000);
 }
 
@@ -800,6 +802,7 @@ function entrarApp(){
   $('user-rol').className='rol'+(esAdmin?'':' inv');
   construirNav();
   irVista('carga');
+  aplicarComunes();
   renderTodo();
 }
 
@@ -881,6 +884,30 @@ function datosComunes(){
   };
 }
 
+/* ===== PIZARRA COMÚN: fecha/cultivo/campo/lote compartidos en tiempo real ===== */
+let guardarComunTimer=null;
+function guardarComun(campo,valor){
+  // se guarda en Firebase para que todos lo vean; con pequeño retardo para no saturar al tipear
+  clearTimeout(guardarComunTimer);
+  guardarComunTimer=setTimeout(()=>{ if(db)db.ref('comunes/'+campo).set(valor); },250);
+}
+function aplicarComunes(){
+  if(!sesion)return;
+  const map={fecha:'c-fecha',cultivo:'c-cultivo',campo:'c-campo',lote:'c-lote'};
+  Object.entries(map).forEach(([k,id])=>{
+    const el=$(id); if(!el)return;
+    // No pisar el campo que la persona está editando justo ahora
+    if(document.activeElement===el)return;
+    const v=comunes[k]!==undefined?comunes[k]:'';
+    if(el.value!==v)el.value=v;
+  });
+  // si no hay fecha compartida todavía, poner hoy por defecto y compartirla
+  if((comunes.fecha===undefined||comunes.fecha==='') && document.activeElement!==$('c-fecha')){
+    $('c-fecha').value=hoy();
+    if(db && hayInternet)db.ref('comunes/fecha').set(hoy());
+  }
+}
+
 function abrirCarga(tipo){
   const com=datosComunes();
   if(!com.fecha)return toast('Poné la fecha');
@@ -905,8 +932,6 @@ function abrirCarga(tipo){
 
 /* =================== CARGA: panel compartido =================== */
 function renderCarga(){
-  // recordar última fecha/campo/lote/cultivo
-  if(!$('c-fecha').value)$('c-fecha').value=ultimaComun('fecha')||hoy();
   // ¿hay algún abierto? mostramos el primero (compartido)
   const ids=Object.keys(abiertos);
   if(ids.length){
@@ -993,10 +1018,8 @@ function pedirDescartar(){
 }
 function descartarCarga(){
   if(!abiertoActivoId)return;
-  const r=abiertos[abiertoActivoId];
   borrar('abiertos/'+abiertoActivoId,'Carga descartada');
-  // conservar comunes en el form
-  if(r){ $('c-fecha').value=r.fecha; $('c-campo').value=r.campo||''; $('c-lote').value=r.lote||''; $('c-cultivo').value=r.cultivo||''; }
+  // los comunes (fecha/campo/lote/cultivo) son compartidos y se conservan solos
   $('c-patente').value=''; $('c-total').value=''; $('c-bolnombre').value=''; $('c-metros').value='';
   tipoElegido=null; tamElegido=null;
   $('bt-camion').classList.remove('activo'); $('bt-bolson').classList.remove('activo');
@@ -1017,8 +1040,7 @@ function cerrarCarga(){
   const rid=uid();
   const updates={}; updates['registros/'+rid]=reg; updates['abiertos/'+abiertoActivoId]=null;
   actualizar(updates,'Guardado en kilos cosechados');
-  // conservar comunes en el form
-  $('c-fecha').value=r.fecha; $('c-campo').value=r.campo; $('c-lote').value=r.lote; $('c-cultivo').value=r.cultivo;
+  // los comunes (fecha/campo/lote/cultivo) son compartidos y se conservan solos
   $('c-patente').value=''; $('c-total').value=''; $('c-bolnombre').value=''; $('c-metros').value='';
   tipoElegido=null; tamElegido=null;
   $('bt-camion').classList.remove('activo'); $('bt-bolson').classList.remove('activo');
