@@ -369,7 +369,7 @@
 
       <div class="tarjeta" id="contador-camiones" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px">
         <div>
-          <div style="font-size:12px;text-transform:uppercase;color:var(--gris);font-weight:700;letter-spacing:.4px">🚛 Camiones del día</div>
+          <div style="font-size:12px;text-transform:uppercase;color:var(--gris);font-weight:700;letter-spacing:.4px">🚛 Camiones cerrados hoy</div>
           <div style="font-family:var(--display);font-size:13px;color:var(--gris);margin-top:2px" id="contador-info">—</div>
         </div>
         <div style="text-align:right">
@@ -944,22 +944,35 @@ function aplicarComunes(){
   }
 }
 
-function numeroCamionDelDia(fecha){
-  // cuenta camiones de esa fecha (abiertos + cerrados) y suma el offset de reseteo del día
+function numeroCamionDelDia(fecha,excluirId){
+  // cuenta camiones de esa fecha (cerrados + abiertos, excepto el que se está numerando) y suma el offset
   const off=(comunes.resetCamion && comunes.resetCamion[fecha]!==undefined)?Number(comunes.resetCamion[fecha]):0;
   let n=0;
-  Object.values(abiertos).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)n++; });
+  Object.entries(abiertos).forEach(([id,r])=>{ if(r.tipo==='camion'&&r.fecha===fecha&&id!==excluirId)n++; });
   Object.values(registros).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)n++; });
   return off+n+1;
+}
+function camionesCerradosDia(fecha){
+  return Object.values(registros).filter(r=>r.tipo==='camion'&&r.fecha===fecha).length;
+}
+function camionAbiertoDelDia(fecha){
+  const e=Object.values(abiertos).find(r=>r.tipo==='camion'&&r.fecha===fecha);
+  return e||null;
 }
 function actualizarContador(){
   if(!sesion)return;
   const fecha=$('c-fecha').value||hoy();
-  const prox=numeroCamionDelDia(fecha);
-  const cargadosHoy=prox-1-((comunes.resetCamion&&comunes.resetCamion[fecha]!==undefined)?Number(comunes.resetCamion[fecha]):0);
+  const cerrados=camionesCerradosDia(fecha);
+  const abierto=camionAbiertoDelDia(fecha);
   const elNum=$('contador-num'), elInfo=$('contador-info'), elBtn=$('btn-reset-cont');
-  if(elNum)elNum.textContent=prox;
-  if(elInfo)elInfo.textContent='Próximo: Nº'+prox+' · '+fechaLinda(fecha);
+  // número grande = cuántos camiones cerrados hoy
+  if(elNum)elNum.textContent=cerrados;
+  // info = qué se está cargando ahora
+  if(elInfo){
+    if(abierto && abierto.numDia)elInfo.textContent='Cargándose ahora: Camión Nº'+abierto.numDia;
+    else if(abierto)elInfo.textContent='Cargándose un camión';
+    else elInfo.textContent='Próximo: Nº'+numeroCamionDelDia(fecha);
+  }
   if(elBtn)elBtn.style.display=(sesion.rol==='admin')?'inline-block':'none';
 }
 function abrirResetContador(){
@@ -1032,6 +1045,12 @@ function sumaTolvas(r){ return Object.values(r.tolvas||{}).reduce((s,t)=>s+(Numb
 
 function pintarPanel(r){
   const esCam=r.tipo==='camion';
+  // Auto-corrección: si un camión quedó abierto sin número (de antes de esta función), se lo asignamos
+  if(esCam && !r.numDia && abiertoActivoId && sesion.rol==='admin' && hayInternet){
+    const num=numeroCamionDelDia(r.fecha,abiertoActivoId);
+    db.ref('abiertos/'+abiertoActivoId+'/numDia').set(num);
+    r.numDia=num;
+  }
   $('panel-titulo').innerHTML = esCam ? `🚛 Camión Nº${r.numDia||'?'} — ${esc(r.patente)}` : `🛢️ Bolsón — ${esc(r.bolnombre)} (${r.metros} mts)`;
   $('panel-sub').textContent = `${fechaLinda(r.fecha)} · ${r.campo||'—'} · ${r.lote||'—'} · ${r.cultivo||'—'}`;
   const cargado=sumaTolvas(r);
