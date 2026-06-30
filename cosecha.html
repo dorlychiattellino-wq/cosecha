@@ -555,6 +555,18 @@
   </div>
 </div>
 
+<!-- ===== MODAL EDITAR TOLVA ===== -->
+<div class="modal-bg" id="modal-tolva">
+  <div class="modal">
+    <div class="modal-head"><h3>Editar kilos de la tolva</h3><button class="modal-cerrar" onclick="cerrar('modal-tolva')">×</button></div>
+    <input type="hidden" id="mt-rid"><input type="hidden" id="mt-tid">
+    <p class="sub" id="mt-info"></p>
+    <div class="campo-form"><label>Kilos de esta tolva</label><input id="mt-kg" type="number" inputmode="numeric" placeholder="0"></div>
+    <button class="btn" onclick="guardarTolvaEdit()">Guardar</button>
+    <button class="btn-cancelar" onclick="cerrar('modal-tolva')">Cancelar</button>
+  </div>
+</div>
+
 <!-- ===== MODAL COMPARTIR ===== -->
 <div class="modal-bg" id="modal-compartir">
   <div class="modal">
@@ -984,7 +996,7 @@ function pintarPanel(r){
     cont.innerHTML='<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:8px 0">Tolvas cargadas ('+tolvas.length+')</h4>'+
       tolvas.map(([tid,t])=>`<div class="tolva-item">
         <div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}</div></div>
-        <button onclick="borrarTolva('${tid}')" title="Borrar tolva">🗑️</button></div>`).join('');
+        <div style="display:flex;gap:2px"><button onclick="editarTolvaActiva('${tid}')" title="Editar kilos">✏️</button><button onclick="borrarTolva('${tid}')" title="Borrar tolva">🗑️</button></div></div>`).join('');
   }
 }
 
@@ -1000,6 +1012,15 @@ function sumarTolva(){
 function borrarTolva(tid){
   if(!abiertoActivoId)return;
   borrar('abiertos/'+abiertoActivoId+'/tolvas/'+tid,'Tolva borrada');
+}
+function editarTolvaActiva(tid){
+  if(!abiertoActivoId)return;
+  const r=abiertos[abiertoActivoId]; if(!r||!r.tolvas||!r.tolvas[tid])return;
+  const t=r.tolvas[tid];
+  $('mt-rid').value='__activo__'; $('mt-tid').value=tid;
+  $('mt-info').textContent='Cargada por '+(t.usuario||'—')+(t.hora?(' a las '+t.hora):'');
+  $('mt-kg').value=t.kg||'';
+  abrir('modal-tolva');
 }
 
 function pedirCerrar(){
@@ -1108,7 +1129,7 @@ function renderCosechado(){
       </div>
       <div class="reg-det">
         <h4>Tolvas que conformaron estos kilos (${tolvas.length})</h4>
-        ${tolvas.length?tolvas.map(([tid,t])=>`<div class="tolva-item"><div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}</div></div><button onclick="borrarTolvaReg('${id}','${tid}')" title="Borrar tolva">🗑️</button></div>`).join(''):'<p class="sub">Sin detalle de tolvas.</p>'}
+        ${tolvas.length?tolvas.map(([tid,t])=>`<div class="tolva-item"><div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}</div></div><div style="display:flex;gap:2px"><button onclick="editarTolvaReg('${id}','${tid}')" title="Editar kilos">✏️</button><button onclick="borrarTolvaReg('${id}','${tid}')" title="Borrar tolva">🗑️</button></div></div>`).join(''):'<p class="sub">Sin detalle de tolvas.</p>'}
         <div class="reg-acc">
           <button class="btn peq linea" onclick="abrirEdit('${id}')">✏️ Editar</button>
           <button class="btn peq rojo" onclick="pedirBorrarUno('${id}')">🗑️ Borrar</button>
@@ -1165,6 +1186,32 @@ function borrarTolvaReg(rid,tid){
     const parts=[...new Set(Object.values(tolvas).map(t=>t.usuario))];
     actualizar({['registros/'+rid+'/tolvas']:tolvas,['registros/'+rid+'/kg']:kgN,['registros/'+rid+'/participantes']:parts},'Tolva borrada');
   },'Sí, borrar');
+}
+function editarTolvaReg(rid,tid){
+  const r=registros[rid]; if(!r||!r.tolvas||!r.tolvas[tid])return;
+  const t=r.tolvas[tid];
+  $('mt-rid').value=rid; $('mt-tid').value=tid;
+  $('mt-info').textContent='Cargada por '+(t.usuario||'—')+(t.hora?(' a las '+t.hora):'');
+  $('mt-kg').value=t.kg||'';
+  abrir('modal-tolva');
+}
+function guardarTolvaEdit(){
+  const rid=$('mt-rid').value, tid=$('mt-tid').value;
+  const nuevo=Number($('mt-kg').value);
+  if(!nuevo||nuevo<=0)return toast('Poné los kilos (mayor que cero)');
+  if(rid==='__activo__'){
+    if(!abiertoActivoId)return;
+    const r=abiertos[abiertoActivoId];
+    if(!r||!r.tolvas||!r.tolvas[tid])return;
+    actualizar({['abiertos/'+abiertoActivoId+'/tolvas/'+tid+'/kg']:nuevo},'Kilos actualizados');
+    cerrar('modal-tolva'); return;
+  }
+  const r=registros[rid]; if(!r||!r.tolvas||!r.tolvas[tid])return;
+  const tolvas={...r.tolvas};
+  tolvas[tid]={...tolvas[tid],kg:nuevo};
+  const kgN=Object.values(tolvas).reduce((s,t)=>s+(Number(t.kg)||0),0);
+  actualizar({['registros/'+rid+'/tolvas/'+tid+'/kg']:nuevo,['registros/'+rid+'/kg']:kgN},'Kilos actualizados');
+  cerrar('modal-tolva');
 }
 
 /* editar */
