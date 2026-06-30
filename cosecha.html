@@ -412,6 +412,7 @@
           <div class="tolvas-lista" id="tolvas-lista"></div>
 
           <button class="btn rojo" style="margin-top:14px" onclick="pedirCerrar()">✅ Cerrar camión/bolsón</button>
+          <button class="btn-cancelar" style="margin-top:10px" onclick="pedirDescartar()">❌ Descartar (no guardar)</button>
         </div>
       </div>
     </section>
@@ -958,6 +959,24 @@ function pedirCerrar(){
   const cargado=sumaTolvas(r);
   if(cargado<=0)return toast('No hay tolvas cargadas todavía');
   pedirConfirm('Cerrar carga',`Se va a guardar este ${r.tipo} con ${nkg(cargado)} kg en el historial. ¿Cerrar?`,()=>cerrarCarga(),'Sí, cerrar');
+}
+function pedirDescartar(){
+  if(!abiertoActivoId)return;
+  const r=abiertos[abiertoActivoId];
+  const cargado=sumaTolvas(r);
+  const det = cargado>0 ? ` Tiene ${nkg(cargado)} kg cargados que NO se van a guardar.` : '';
+  pedirConfirm('Descartar carga',`¿Descartar este ${r.tipo} sin guardarlo en el historial?${det} No se puede deshacer.`,()=>descartarCarga(),'Sí, descartar');
+}
+function descartarCarga(){
+  if(!abiertoActivoId)return;
+  const r=abiertos[abiertoActivoId];
+  borrar('abiertos/'+abiertoActivoId,'Carga descartada');
+  // conservar comunes en el form
+  if(r){ $('c-fecha').value=r.fecha; $('c-campo').value=r.campo||''; $('c-lote').value=r.lote||''; $('c-cultivo').value=r.cultivo||''; }
+  $('c-patente').value=''; $('c-total').value=''; $('c-bolnombre').value=''; $('c-metros').value='';
+  tipoElegido=null; tamElegido=null;
+  $('bt-camion').classList.remove('activo'); $('bt-bolson').classList.remove('activo');
+  $('form-camion').style.display='none'; $('form-bolson').style.display='none';
 }
 function cerrarCarga(){
   if(!abiertoActivoId)return;
