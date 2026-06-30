@@ -357,7 +357,7 @@
 
       <div class="tarjeta carga-big">
         <div class="fila2">
-          <div class="campo-form"><label>📅 Fecha</label><input type="date" id="c-fecha" oninput="guardarComun('fecha',this.value)" onchange="guardarComun('fecha',this.value)"></div>
+          <div class="campo-form"><label>📅 Fecha</label><input type="date" id="c-fecha" oninput="guardarComun('fecha',this.value);actualizarContador()" onchange="guardarComun('fecha',this.value);actualizarContador()"></div>
           <div class="campo-form autobox"><label>🌱 Cultivo</label><input id="c-cultivo" placeholder="Ej: Soja" autocomplete="off" oninput="autoc('cultivo',this);guardarComun('cultivo',this.value)"><div class="sugerencias" id="sug-cultivo"></div></div>
         </div>
         <div class="fila2">
@@ -365,6 +365,17 @@
           <div class="campo-form autobox"><label>📍 Lote</label><input id="c-lote" placeholder="Ej: Lote 4" autocomplete="off" oninput="autoc('lote',this);guardarComun('lote',this.value)"><div class="sugerencias" id="sug-lote"></div></div>
         </div>
         <p class="sub" style="margin:2px 0 0;font-size:12px">🔗 Estos datos se comparten con todos en tiempo real.</p>
+      </div>
+
+      <div class="tarjeta" id="contador-camiones" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px">
+        <div>
+          <div style="font-size:12px;text-transform:uppercase;color:var(--gris);font-weight:700;letter-spacing:.4px">🚛 Camiones del día</div>
+          <div style="font-family:var(--display);font-size:13px;color:var(--gris);margin-top:2px" id="contador-info">—</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--display);font-size:34px;font-weight:700;line-height:1" id="contador-num">0</div>
+          <button class="btn peq linea" id="btn-reset-cont" style="margin-top:6px;display:none" onclick="abrirResetContador()">⚙️ Fijar número</button>
+        </div>
       </div>
 
       <div id="zona-sin-abierto">
@@ -567,6 +578,18 @@
   </div>
 </div>
 
+<!-- ===== MODAL RESET CONTADOR ===== -->
+<div class="modal-bg" id="modal-reset">
+  <div class="modal">
+    <div class="modal-head"><h3>Numeración de camiones del día</h3><button class="modal-cerrar" onclick="cerrar('modal-reset')">×</button></div>
+    <p class="sub" id="reset-info"></p>
+    <div class="campo-form"><label>El PRÓXIMO camión que se abra será el número</label><input id="reset-num" type="number" inputmode="numeric" min="1" placeholder="Ej: 1"></div>
+    <p class="sub">Sirve para reiniciar a 1, o empezar el día desde otro número si hace falta. Solo afecta a la fecha que está cargada arriba.</p>
+    <button class="btn" onclick="guardarResetContador()">Guardar</button>
+    <button class="btn-cancelar" onclick="cerrar('modal-reset')">Cancelar</button>
+  </div>
+</div>
+
 <!-- ===== MODAL COMPARTIR ===== -->
 <div class="modal-bg" id="modal-compartir">
   <div class="modal">
@@ -696,7 +719,7 @@ function escucharDatos(){
   db.ref('usuarios').on('value',s=>{usuarios=s.val()||{}; if(!listo)arrancar(); else { refrescarSesion(); renderTodo(); }});
   db.ref('registros').on('value',s=>{registros=s.val()||{}; renderTodo();});
   db.ref('abiertos').on('value',s=>{abiertos=s.val()||{}; renderCarga();});
-  db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes();});
+  db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes(); actualizarContador();});
   setTimeout(arrancar,5000);
 }
 
@@ -920,6 +943,45 @@ function aplicarComunes(){
   }
 }
 
+function numeroCamionDelDia(fecha){
+  // cuenta camiones de esa fecha (abiertos + cerrados) y suma el offset de reseteo del día
+  const off=(comunes.resetCamion && comunes.resetCamion[fecha]!==undefined)?Number(comunes.resetCamion[fecha]):0;
+  let n=0;
+  Object.values(abiertos).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)n++; });
+  Object.values(registros).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)n++; });
+  return off+n+1;
+}
+function actualizarContador(){
+  if(!sesion)return;
+  const fecha=$('c-fecha').value||hoy();
+  const prox=numeroCamionDelDia(fecha);
+  const cargadosHoy=prox-1-((comunes.resetCamion&&comunes.resetCamion[fecha]!==undefined)?Number(comunes.resetCamion[fecha]):0);
+  const elNum=$('contador-num'), elInfo=$('contador-info'), elBtn=$('btn-reset-cont');
+  if(elNum)elNum.textContent=prox;
+  if(elInfo)elInfo.textContent='Próximo: Nº'+prox+' · '+fechaLinda(fecha);
+  if(elBtn)elBtn.style.display=(sesion.rol==='admin')?'inline-block':'none';
+}
+function abrirResetContador(){
+  if(sesion.rol!=='admin')return;
+  const fecha=$('c-fecha').value||hoy();
+  $('reset-info').textContent='Fecha: '+fechaLinda(fecha)+'. El próximo camión que se abra tomará este número.';
+  $('reset-num').value=numeroCamionDelDia(fecha);
+  abrir('modal-reset');
+}
+function guardarResetContador(){
+  if(sesion.rol!=='admin')return;
+  const fecha=$('c-fecha').value||hoy();
+  const deseado=Number($('reset-num').value);
+  if(!deseado||deseado<1)return toast('Poné un número válido (1 o más)');
+  // offset = número deseado - (camiones ya existentes del día) - 1
+  let existentes=0;
+  Object.values(abiertos).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)existentes++; });
+  Object.values(registros).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)existentes++; });
+  const off=deseado-existentes-1;
+  if(db)db.ref('comunes/resetCamion/'+fecha).set(off);
+  toast('Numeración fijada: próximo Nº'+deseado);
+  cerrar('modal-reset');
+}
 function abrirCarga(tipo){
   const com=datosComunes();
   if(!com.fecha)return toast('Poné la fecha');
@@ -930,6 +992,7 @@ function abrirCarga(tipo){
     const tot=Number($('c-total').value)||0;
     if(!pat)return toast('Poné la patente');
     obj.patente=pat; obj.total=tot;
+    obj.numDia=numeroCamionDelDia(com.fecha);
   }else{
     const nom=$('c-bolnombre').value.trim();
     if(!nom)return toast('Poné el nombre del bolsón');
@@ -944,6 +1007,7 @@ function abrirCarga(tipo){
 
 /* =================== CARGA: panel compartido =================== */
 function renderCarga(){
+  actualizarContador();
   // ¿hay algún abierto? mostramos el primero (compartido)
   const ids=Object.keys(abiertos);
   if(ids.length){
@@ -967,7 +1031,7 @@ function sumaTolvas(r){ return Object.values(r.tolvas||{}).reduce((s,t)=>s+(Numb
 
 function pintarPanel(r){
   const esCam=r.tipo==='camion';
-  $('panel-titulo').innerHTML = esCam ? `🚛 Camión — ${esc(r.patente)}` : `🛢️ Bolsón — ${esc(r.bolnombre)} (${r.metros} mts)`;
+  $('panel-titulo').innerHTML = esCam ? `🚛 Camión Nº${r.numDia||'?'} — ${esc(r.patente)}` : `🛢️ Bolsón — ${esc(r.bolnombre)} (${r.metros} mts)`;
   $('panel-sub').textContent = `${fechaLinda(r.fecha)} · ${r.campo||'—'} · ${r.lote||'—'} · ${r.cultivo||'—'}`;
   const cargado=sumaTolvas(r);
   const mc=$('panel-marcadores');
@@ -1056,7 +1120,7 @@ function cerrarCarga(){
     kg:cargado,tolvas:r.tolvas||{},participantes,
     cerradoPor:sesion.nombre,cerrado:Date.now(),creado:r.creado||Date.now()
   };
-  if(r.tipo==='camion'){reg.patente=r.patente;reg.total=r.total||0;}
+  if(r.tipo==='camion'){reg.patente=r.patente;reg.total=r.total||0;reg.numDia=r.numDia||null;}
   else{reg.bolnombre=r.bolnombre;reg.metros=r.metros||0;}
   const rid=uid();
   const updates={}; updates['registros/'+rid]=reg; updates['abiertos/'+abiertoActivoId]=null;
@@ -1070,7 +1134,7 @@ function cerrarCarga(){
 
 /* =================== KILOS COSECHADOS =================== */
 function regParticipantes(r){ return (r.participantes||[]).join(', ')||r.cerradoPor||'—'; }
-function refLinda(r){ return r.tipo==='camion'?('🚛 '+(r.patente||'—')):('🛢️ '+(r.bolnombre||'—')+(r.metros?(' · '+r.metros+'mts'):'')); }
+function refLinda(r){ return r.tipo==='camion'?('🚛 '+(r.numDia?('Nº'+r.numDia+' · '):'')+(r.patente||'—')):('🛢️ '+(r.bolnombre||'—')+(r.metros?(' · '+r.metros+'mts'):'')); }
 
 function llenarSelect(id,valores,actual){
   const s=$(id); const v=actual!==undefined?actual:s.value;
