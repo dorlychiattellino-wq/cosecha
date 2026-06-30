@@ -637,10 +637,19 @@ function iniciar(){
   cargarSDK(()=>{
     try{
       firebase.initializeApp(FIREBASE_CONFIG);
+      // Persistencia offline: permite seguir cargando sin internet y sincroniza al volver la señal
+      try{ firebase.database().setPersistenceEnabled(true); }catch(e){}
       db=firebase.database();
+      // Mantener sincronizadas estas ramas aunque se corte el internet
+      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); }catch(e){}
       auth=firebase.auth();
-      auth.signInAnonymously().catch(()=>{ $('carga-txt').textContent='No se pudo autenticar. Revisá que la autenticación anónima esté activada en Firebase.'; });
+      // Si ya hay sesión anónima guardada (de una entrada previa con señal), arranca aunque esté offline
       auth.onAuthStateChanged(u=>{ if(u){ firebaseOK=true; escucharConexion(); escucharDatos(); } });
+      auth.signInAnonymously().catch(()=>{
+        // Si falla por falta de internet pero ya había sesión previa, igual va a entrar por onAuthStateChanged.
+        // Solo mostramos aviso si después de unos segundos no arrancó nada.
+        setTimeout(()=>{ if(!firebaseOK)$('carga-txt').textContent='Sin internet y sin sesión previa. Conectate una vez a internet para usar la app.'; },6000);
+      });
     }catch(e){
       $('carga-txt').textContent='Error de conexión. Revisá tu internet y recargá.';
     }
@@ -662,9 +671,9 @@ function falloSDK(){ $('carga-txt').textContent='No se pudo cargar Firebase. Rev
 
 function escucharConexion(){
   db.ref('.info/connected').on('value',s=>{
-    const on=s.val()===true;
-    $('conexion').className='conexion '+(on?'online':'offline');
-    $('conexion-txt').textContent=on?'En línea':'Sin conexión';
+    hayInternet=s.val()===true;
+    $('conexion').className='conexion '+(hayInternet?'online':'offline');
+    $('conexion-txt').textContent=hayInternet?'En línea':'Sin conexión · se guarda igual';
   });
 }
 
@@ -677,10 +686,25 @@ function escucharDatos(){
   setTimeout(arrancar,5000);
 }
 
-/* =================== GUARDAR / BORRAR =================== */
-function guardar(ruta,obj,msg){ if(!firebaseOK){toast('Sin conexión');return;} db.ref(ruta).set(obj).then(()=>{if(msg)toast(msg);}).catch(()=>toast('Error al guardar')); }
-function actualizar(updates,msg){ if(!firebaseOK){toast('Sin conexión');return;} db.ref().update(updates).then(()=>{if(msg)toast(msg);}).catch(()=>toast('Error al guardar')); }
-function borrar(ruta,msg){ if(!firebaseOK){toast('Sin conexión');return;} db.ref(ruta).remove().then(()=>{if(msg)toast(msg);}).catch(()=>toast('Error al borrar')); }
+/* =================== GUARDAR / BORRAR ===================
+   Con persistencia offline: si no hay internet, Firebase encola la operación
+   y la sube sola cuando vuelve la señal. No bloqueamos al usuario. */
+let hayInternet=false;
+function guardar(ruta,obj,msg){
+  if(!db){toast('La app todavía no terminó de iniciar');return;}
+  db.ref(ruta).set(obj).then(()=>{if(msg)toast(msg);}).catch(()=>{});
+  if(!hayInternet && msg)toast('Guardado. Se subirá al volver internet');
+}
+function actualizar(updates,msg){
+  if(!db){toast('La app todavía no terminó de iniciar');return;}
+  db.ref().update(updates).then(()=>{if(msg)toast(msg);}).catch(()=>{});
+  if(!hayInternet && msg)toast('Guardado. Se subirá al volver internet');
+}
+function borrar(ruta,msg){
+  if(!db){toast('La app todavía no terminó de iniciar');return;}
+  db.ref(ruta).remove().then(()=>{if(msg)toast(msg);}).catch(()=>{});
+  if(!hayInternet && msg)toast('Hecho. Se sincronizará al volver internet');
+}
 
 /* =================== AUTH (app) =================== */
 function hayAdmins(){ return Object.values(usuarios).some(u=>u.rol==='admin'&&!u.baja); }
@@ -1314,7 +1338,7 @@ function importarBackup(input){
   reader.readAsText(file); input.value='';
 }
 function confirmarRestaurar(modo){
-  if(!backupPendiente)return; if(!firebaseOK){toast('Sin conexión');return;}
+  if(!backupPendiente)return; if(!hayInternet){toast('Necesitás internet para restaurar');return;}
   const b=backupPendiente;
   if(modo==='reemplazar'){
     Promise.all([db.ref('usuarios').set(b.usuarios||{}),db.ref('registros').set(b.registros||{}),db.ref('abiertos').set(b.abiertos||{})])
