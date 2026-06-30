@@ -461,6 +461,7 @@
         <span class="cuenta-sel" id="cos-cuenta-sel">0 seleccionados</span>
         <button class="btn peq rojo" onclick="pedirBorrarSeleccionados()">🗑️ Borrar seleccionados</button>
         <button class="btn peq gris" onclick="limpiarSeleccion()">Quitar selección</button>
+        <button class="btn peq linea" onclick="pedirNumerarCamiones()">🔢 Numerar camiones sin número</button>
       </div>
       <p class="sub" style="margin-top:-6px;font-size:12px">En computadora: clic + <b>Ctrl</b> o <b>Shift</b> para elegir varios, y <b>Supr</b> para borrar.</p>
 
@@ -1241,6 +1242,37 @@ function pedirBorrarSeleccionados(){
     const updates={}; seleccion.forEach(id=>updates['registros/'+id]=null);
     actualizar(updates,`${n} registro${n===1?'':'s'} borrado${n===1?'':'s'}`); limpiarSeleccion();
   },'Sí, borrar');
+}
+function pedirNumerarCamiones(){
+  if(sesion.rol!=='admin')return toast('Solo administradores');
+  // contar cuántos camiones sin número hay
+  const sinNum=Object.entries(registros).filter(([id,r])=>r.tipo==='camion' && !r.numDia);
+  if(!sinNum.length)return toast('Todos los camiones ya tienen número');
+  pedirConfirm('Numerar camiones',`Se van a numerar ${sinNum.length} camión${sinNum.length===1?'':'es'} sin número, por día y por orden de cierre. Los que ya tienen número no se tocan. ¿Continuar?`,()=>numerarCamiones(),'Sí, numerar');
+}
+function numerarCamiones(){
+  // agrupar TODOS los camiones por fecha (con y sin número), ordenar por cierre, y renumerar respetando lo existente
+  const porDia={};
+  Object.entries(registros).forEach(([id,r])=>{
+    if(r.tipo!=='camion')return;
+    (porDia[r.fecha]=porDia[r.fecha]||[]).push([id,r]);
+  });
+  const updates={}; let cuenta=0;
+  Object.values(porDia).forEach(lista=>{
+    // ordenar por hora de cierre (o creación)
+    lista.sort((a,b)=>(a[1].cerrado||a[1].creado||0)-(b[1].cerrado||b[1].creado||0));
+    // números ya ocupados ese día (por los que ya tienen numDia)
+    const usados=new Set(lista.filter(([id,r])=>r.numDia).map(([id,r])=>Number(r.numDia)));
+    let prox=1;
+    lista.forEach(([id,r])=>{
+      if(r.numDia)return; // respetar los que ya tienen número
+      while(usados.has(prox))prox++; // saltar números ocupados
+      usados.add(prox);
+      updates['registros/'+id+'/numDia']=prox; cuenta++;
+    });
+  });
+  if(!cuenta){toast('No había camiones para numerar');return;}
+  actualizar(updates,`${cuenta} camión${cuenta===1?'':'es'} numerado${cuenta===1?'':'s'}`);
 }
 function borrarTolvaReg(rid,tid){
   pedirConfirm('Borrar tolva','¿Borrar esta tolva? Los kilos del registro se van a recalcular.',()=>{
