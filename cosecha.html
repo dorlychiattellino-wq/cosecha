@@ -644,6 +644,7 @@ let periodo='mes';
 let seleccion=new Set();
 let ultimoSelIndex=null;
 let confCallback=null;
+let modoReset='proximo';
 
 /* =================== UTILES =================== */
 const $=id=>document.getElementById(id);
@@ -977,9 +978,22 @@ function actualizarContador(){
 }
 function abrirResetContador(){
   if(sesion.rol!=='admin')return;
+  modoReset='proximo';
   const fecha=$('c-fecha').value||hoy();
   $('reset-info').textContent='Fecha: '+fechaLinda(fecha)+'. El próximo camión que se abra tomará este número.';
+  document.querySelector('#modal-reset .modal-head h3').textContent='Numeración de camiones del día';
+  document.querySelector('#modal-reset label').textContent='El PRÓXIMO camión que se abra será el número';
   $('reset-num').value=numeroCamionDelDia(fecha);
+  abrir('modal-reset');
+}
+function editarNumActivo(){
+  if(sesion.rol!=='admin'||!abiertoActivoId)return;
+  const r=abiertos[abiertoActivoId]; if(!r||r.tipo!=='camion')return;
+  modoReset='actual';
+  document.querySelector('#modal-reset .modal-head h3').textContent='Número del camión actual';
+  $('reset-info').textContent='Camión '+(r.patente||'')+'. Cambiá el número que le corresponde.';
+  document.querySelector('#modal-reset label').textContent='Este camión es el número';
+  $('reset-num').value=r.numDia||1;
   abrir('modal-reset');
 }
 function guardarResetContador(){
@@ -987,7 +1001,14 @@ function guardarResetContador(){
   const fecha=$('c-fecha').value||hoy();
   const deseado=Number($('reset-num').value);
   if(!deseado||deseado<1)return toast('Poné un número válido (1 o más)');
-  // offset = número deseado - (camiones ya existentes del día) - 1
+  if(modoReset==='actual'){
+    // cambiar el número del camión que se está cargando
+    if(!abiertoActivoId)return;
+    if(db)db.ref('abiertos/'+abiertoActivoId+'/numDia').set(deseado);
+    toast('Camión ahora es Nº'+deseado);
+    cerrar('modal-reset'); return;
+  }
+  // modo 'proximo': fijar desde qué número sigue
   let existentes=0;
   Object.values(abiertos).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)existentes++; });
   Object.values(registros).forEach(r=>{ if(r.tipo==='camion'&&r.fecha===fecha)existentes++; });
@@ -1051,7 +1072,9 @@ function pintarPanel(r){
     db.ref('abiertos/'+abiertoActivoId+'/numDia').set(num);
     r.numDia=num;
   }
-  $('panel-titulo').innerHTML = esCam ? `🚛 Camión Nº${r.numDia||'?'} — ${esc(r.patente)}` : `🛢️ Bolsón — ${esc(r.bolnombre)} (${r.metros} mts)`;
+  let tituloCam = `🚛 Camión Nº${r.numDia||'?'} — ${esc(r.patente)}`;
+  if(esCam && sesion.rol==='admin')tituloCam += ` <button onclick="editarNumActivo()" style="background:none;border:1px solid var(--gris-cl);border-radius:7px;cursor:pointer;font-size:13px;padding:2px 8px;margin-left:4px;color:var(--campo)">✏️ Nº</button>`;
+  $('panel-titulo').innerHTML = esCam ? tituloCam : `🛢️ Bolsón — ${esc(r.bolnombre)} (${r.metros} mts)`;
   $('panel-sub').textContent = `${fechaLinda(r.fecha)} · ${r.campo||'—'} · ${r.lote||'—'} · ${r.cultivo||'—'}`;
   const cargado=sumaTolvas(r);
   const mc=$('panel-marcadores');
@@ -1251,15 +1274,37 @@ function pintarSeleccion(){
 function actualizarCuentaSel(){ $('cos-cuenta-sel').textContent=seleccion.size+' seleccionado'+(seleccion.size===1?'':'s'); }
 function limpiarSeleccion(){ seleccion.clear(); ultimoSelIndex=null; pintarSeleccion(); }
 
+function renumerarDia(fecha){
+  // reordena todos los camiones del día (cerrados + abierto) por su número/cierre actual y reasigna 1,2,3... consecutivos
+  if(!fecha||!hayInternet)return;
+  const cerr=Object.entries(registros).filter(([id,r])=>r.tipo==='camion'&&r.fecha===fecha)
+    .map(([id,r])=>({ruta:'registros/'+id,n:r.numDia||9999,t:r.cerrado||r.creado||0}));
+  const abi=Object.entries(abiertos).filter(([id,r])=>r.tipo==='camion'&&r.fecha===fecha)
+    .map(([id,r])=>({ruta:'abiertos/'+id,n:r.numDia||9999,t:r.creado||0}));
+  const todos=[...cerr,...abi].sort((a,b)=>(a.n-b.n)||(a.t-b.t));
+  const updates={}; let i=0;
+  todos.forEach(c=>{ i++; updates[c.ruta+'/numDia']=i; });
+  // resetear el offset del día (ya no hace falta porque renumeramos desde 1)
+  updates['comunes/resetCamion/'+fecha]=0;
+  if(Object.keys(updates).length)db.ref().update(updates);
+}
 function pedirBorrarUno(id){
-  pedirConfirm('Borrar registro','¿Seguro que querés borrar este registro? No se puede deshacer.',()=>{ borrar('registros/'+id,'Registro borrado'); seleccion.delete(id); },'Sí, borrar');
+  const r=registros[id]; const fecha=r?r.fecha:null;
+  pedirConfirm('Borrar registro','¿Seguro que querés borrar este registro? Si es un camión, los demás del día se reacomodan. No se puede deshacer.',()=>{
+    db.ref('registros/'+id).remove().then(()=>{ if(r&&r.tipo==='camion')setTimeout(()=>renumerarDia(fecha),400); });
+    seleccion.delete(id); toast('Registro borrado');
+  },'Sí, borrar');
 }
 function pedirBorrarSeleccionados(){
   if(!seleccion.size)return toast('No hay registros seleccionados');
   const n=seleccion.size;
-  pedirConfirm('Borrar seleccionados',`¿Seguro que querés borrar ${n} registro${n===1?'':'s'}? No se puede deshacer.`,()=>{
+  // fechas de camiones afectados
+  const fechas=new Set();
+  seleccion.forEach(id=>{ const r=registros[id]; if(r&&r.tipo==='camion')fechas.add(r.fecha); });
+  pedirConfirm('Borrar seleccionados',`¿Seguro que querés borrar ${n} registro${n===1?'':'s'}? Si hay camiones, los del día se reacomodan. No se puede deshacer.`,()=>{
     const updates={}; seleccion.forEach(id=>updates['registros/'+id]=null);
-    actualizar(updates,`${n} registro${n===1?'':'s'} borrado${n===1?'':'s'}`); limpiarSeleccion();
+    db.ref().update(updates).then(()=>{ setTimeout(()=>fechas.forEach(f=>renumerarDia(f)),400); });
+    toast(`${n} registro${n===1?'':'s'} borrado${n===1?'':'s'}`); limpiarSeleccion();
   },'Sí, borrar');
 }
 function pedirNumerarCamiones(){
