@@ -346,6 +346,10 @@
 
 <!-- ===== APP ===== -->
 <div id="app" style="display:none">
+  <div id="cartel-update" style="display:none;background:linear-gradient(135deg,#e08a2b,#c56a15);color:#fff;padding:10px 16px;text-align:center;font-weight:700;font-size:14px;position:sticky;top:0;z-index:60;box-shadow:0 2px 8px rgba(0,0,0,.2)">
+    🔄 Hay una versión nueva disponible
+    <button onclick="aplicarActualizacion()" style="margin-left:10px;background:#fff;color:#c56a15;border:none;border-radius:8px;padding:6px 14px;font-weight:800;cursor:pointer;font-size:13px">Actualizar ahora</button>
+  </div>
   <header>
     <div class="head-row">
       <div class="logo"><div class="escudo">🌾</div><h1>Cosecha</h1></div>
@@ -654,6 +658,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
+const VERSION_APP=2; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -742,7 +747,24 @@ function escucharDatos(){
   db.ref('registros').on('value',s=>{registros=s.val()||{}; renderTodo();});
   db.ref('abiertos').on('value',s=>{abiertos=s.val()||{}; renderCarga();});
   db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes(); actualizarContador();});
+  // Control de versión: si esta copia es la más nueva, la registra; si hay una más nueva, avisa
+  db.ref('versionApp').on('value',s=>{
+    const enServidor=Number(s.val())||0;
+    if(VERSION_APP>enServidor){
+      // esta copia es más nueva: la publicamos para que los demás se enteren
+      db.ref('versionApp').set(VERSION_APP);
+    }else if(enServidor>VERSION_APP){
+      // hay una versión más nueva subida: mostramos el cartel
+      const c=$('cartel-update'); if(c)c.style.display='block';
+    }
+  });
   setTimeout(arrancar,5000);
+}
+function aplicarActualizacion(){
+  // recarga forzada saltando el caché
+  try{ if('caches' in window){ caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))); } }catch(e){}
+  const url=location.href.split('?')[0].split('#')[0];
+  location.replace(url+'?v='+Date.now());
 }
 
 /* =================== GUARDAR / BORRAR ===================
