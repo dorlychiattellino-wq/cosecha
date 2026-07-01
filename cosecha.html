@@ -1066,11 +1066,14 @@ function sumaTolvas(r){ return Object.values(r.tolvas||{}).reduce((s,t)=>s+(Numb
 
 function pintarPanel(r){
   const esCam=r.tipo==='camion';
-  // Auto-corrección: si un camión quedó abierto sin número (de antes de esta función), se lo asignamos
-  if(esCam && !r.numDia && abiertoActivoId && sesion.rol==='admin' && hayInternet){
+  // Auto-corrección: si un camión quedó abierto sin número, se lo asignamos (cualquier usuario).
+  // Usamos transacción para que sea seguro aunque haya varios mirando a la vez.
+  if(esCam && !r.numDia && abiertoActivoId && hayInternet){
     const num=numeroCamionDelDia(r.fecha,abiertoActivoId);
-    db.ref('abiertos/'+abiertoActivoId+'/numDia').set(num);
-    r.numDia=num;
+    db.ref('abiertos/'+abiertoActivoId+'/numDia').transaction(actual=>{
+      return (actual===null||actual===undefined) ? num : actual; // solo escribe si sigue vacío
+    });
+    r.numDia=r.numDia||num;
   }
   let tituloCam = `🚛 Camión Nº${r.numDia||'?'} — ${esc(r.patente)}`;
   if(esCam && sesion.rol==='admin')tituloCam += ` <button onclick="editarNumActivo()" style="background:none;border:1px solid var(--gris-cl);border-radius:7px;cursor:pointer;font-size:13px;padding:2px 8px;margin-left:4px;color:var(--campo)">✏️ Nº</button>`;
@@ -1163,7 +1166,12 @@ function cerrarCarga(){
     kg:cargado,tolvas:r.tolvas||{},participantes,
     cerradoPor:sesion.nombre,cerrado:Date.now(),creado:r.creado||Date.now()
   };
-  if(r.tipo==='camion'){reg.patente=r.patente;reg.total=r.total||0;reg.numDia=r.numDia||null;}
+  if(r.tipo==='camion'){
+    reg.patente=r.patente;
+    reg.total=r.total||0;
+    // si por algún motivo el camión no tiene número, se lo asignamos ahora (excluyéndolo del conteo de abiertos)
+    reg.numDia = r.numDia || numeroCamionDelDia(r.fecha, abiertoActivoId);
+  }
   else{reg.bolnombre=r.bolnombre;reg.metros=r.metros||0;}
   const rid=uid();
   const updates={}; updates['registros/'+rid]=reg; updates['abiertos/'+abiertoActivoId]=null;
