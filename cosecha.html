@@ -1238,115 +1238,139 @@ function registrosFiltrados(){
   }).sort((a,b)=>(b[1].cerrado||0)-(a[1].cerrado||0));
 }
 
+let jsPDFcargado=false;
+function cargarJsPDF(cb){
+  if(jsPDFcargado && window.jspdf){cb();return;}
+  const base='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  const s1=document.createElement('script'); s1.src=base;
+  s1.onload=()=>{
+    const s2=document.createElement('script');
+    s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+    s2.onload=()=>{ jsPDFcargado=true; cb(); };
+    s2.onerror=()=>toast('No se pudo cargar el generador de PDF (revisá internet)');
+    document.head.appendChild(s2);
+  };
+  s1.onerror=()=>toast('No se pudo cargar el generador de PDF (revisá internet)');
+  document.head.appendChild(s1);
+}
+
 function generarPDF(modo){
   if(sesion.rol!=='admin')return;
   const regs=registrosFiltrados().slice().sort((a,b)=>{
-    // ordenar por fecha y luego por número de camión / nombre
     if(a[1].fecha!==b[1].fecha)return (a[1].fecha||'').localeCompare(b[1].fecha||'');
     return (a[1].numDia||9999)-(b[1].numDia||9999);
   });
   if(!regs.length)return toast('No hay registros para el PDF (revisá los filtros)');
+  toast('Generando PDF…');
+  cargarJsPDF(()=>construirPDF(modo,regs));
+}
+
+function construirPDF(modo,regs){
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth();
 
   const total=regs.reduce((s,[id,r])=>s+(Number(r.kg)||0),0);
   const nCam=regs.filter(([id,r])=>r.tipo==='camion').length;
   const nBol=regs.filter(([id,r])=>r.tipo==='bolson').length;
-
-  // subtotales
-  const subt=(campo)=>{
-    const m={}; regs.forEach(([id,r])=>{ const k=r[campo]||'(sin dato)'; m[k]=(m[k]||0)+(Number(r.kg)||0); });
-    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
-  };
-  const porCampo=subt('campo'), porCultivo=subt('cultivo');
-
-  // datos de encabezado
   const campos=[...new Set(regs.map(([id,r])=>r.campo).filter(Boolean))];
   const fechas=regs.map(([id,r])=>r.fecha).filter(Boolean).sort();
   const rangoF = fechas.length? (fechaLinda(fechas[0])+(fechas[0]!==fechas[fechas.length-1]?(' al '+fechaLinda(fechas[fechas.length-1])):'')) : '—';
 
-  const filaCabecera = modo==='detalle'
-    ? '<th>Nº</th><th>Tipo</th><th>Ref.</th><th>Fecha</th><th>Campo</th><th>Lote</th><th>Cultivo</th><th class="der">Kg</th><th>Participantes</th>'
-    : '<th>Nº</th><th>Tipo</th><th>Ref.</th><th>Fecha</th><th>Campo</th><th>Lote</th><th>Cultivo</th><th class="der">Kg</th><th>Participantes</th>';
+  // Encabezado
+  doc.setFillColor(26,46,26); doc.rect(0,0,W,70,'F');
+  doc.setTextColor(217,180,74); doc.setFont('helvetica','bold'); doc.setFontSize(20);
+  doc.text('Cosecha — '+(modo==='detalle'?'Reporte detallado':'Resumen'),40,32);
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('Período: '+rangoF+'   ·   Campo(s): '+(campos.length?campos.join(', '):'Todos'),40,48);
+  doc.text('Camiones: '+nCam+'   ·   Bolsones: '+nBol+'   ·   Generado: '+fechaLinda(hoy())+' '+ahoraHora()+'   ·   Por: '+sesion.nombre,40,61);
 
-  let filas='';
+  // Tabla principal
+  const body=[];
   regs.forEach(([id,r])=>{
     const ref = r.tipo==='camion'?(r.patente||'—'):((r.bolnombre||'—')+(r.metros?(' ('+r.metros+'m)'):''));
-    filas+=`<tr>
-      <td>${r.tipo==='camion'?(r.numDia||'—'):'—'}</td>
-      <td>${r.tipo==='camion'?'Camión':'Bolsón'}</td>
-      <td>${esc(ref)}</td>
-      <td>${fechaLinda(r.fecha)}</td>
-      <td>${esc(r.campo||'—')}</td>
-      <td>${esc(r.lote||'—')}</td>
-      <td>${esc(r.cultivo||'—')}</td>
-      <td class="der"><b>${nkg(r.kg)}</b></td>
-      <td class="peq">${esc(regParticipantes(r))}</td>
-    </tr>`;
+    body.push([
+      r.tipo==='camion'?(r.numDia||'—'):'—',
+      r.tipo==='camion'?'Camión':'Bolsón',
+      ref, fechaLinda(r.fecha), r.campo||'—', r.lote||'—', r.cultivo||'—',
+      nkg(r.kg), regParticipantes(r)
+    ]);
     if(modo==='detalle'){
       const tolvas=Object.values(r.tolvas||{}).sort((a,b)=>(a.t||0)-(b.t||0));
       if(tolvas.length){
-        filas+=`<tr class="detalle"><td></td><td colspan="8"><div class="tolvas-pdf"><b>Tolvas:</b> `+
-          tolvas.map(t=>`${nkg(t.kg)}kg (${esc(t.usuario||'—')}${t.hora?(' '+t.hora):''})`).join(' · ')+
-          `</div></td></tr>`;
+        const txt='Tolvas: '+tolvas.map(t=>nkg(t.kg)+'kg ('+(t.usuario||'—')+(t.hora?(' '+t.hora):'')+')').join('  ·  ');
+        body.push([{content:txt,colSpan:9,styles:{fillColor:[245,243,234],textColor:[80,80,80],fontSize:7,fontStyle:'italic'}}]);
       }
     }
   });
 
-  const subtHTML = (titulo,arr)=>`<div class="subt-box"><h3>${titulo}</h3><table class="subt">${
-    arr.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="der"><b>${nkg(v)} kg</b></td><td class="der peq">${Math.round(v/total*100)}%</td></tr>`).join('')
-  }</table></div>`;
+  doc.autoTable({
+    startY:82,
+    head:[['Nº','Tipo','Ref.','Fecha','Campo','Lote','Cultivo','Kg','Participantes']],
+    body,
+    theme:'grid',
+    headStyles:{fillColor:[47,93,52],textColor:[255,255,255],fontSize:8,fontStyle:'bold'},
+    bodyStyles:{fontSize:8,textColor:[31,38,28]},
+    columnStyles:{0:{cellWidth:24,halign:'center'},7:{halign:'right',fontStyle:'bold'},8:{fontSize:7}},
+    margin:{left:40,right:40}
+  });
 
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cosecha - ${modo==='detalle'?'Detallado':'Resumen'}</title>
-  <style>
-    *{box-sizing:border-box}
-    body{font-family:Arial,Helvetica,sans-serif;color:#1f261c;margin:0;padding:22px;font-size:12px}
-    h1{font-family:Georgia,serif;color:#1a2e1a;margin:0 0 2px;font-size:22px}
-    .head{border-bottom:3px solid #2f5d34;padding-bottom:10px;margin-bottom:14px}
-    .head .meta{color:#555;font-size:12px;margin-top:4px;line-height:1.5}
-    .head .total{font-family:Georgia,serif;font-size:20px;color:#2f5d34;font-weight:bold;margin-top:6px}
-    table{width:100%;border-collapse:collapse;margin-bottom:14px}
-    th{background:#2f5d34;color:#fff;text-align:left;padding:6px 7px;font-size:11px}
-    td{padding:5px 7px;border-bottom:1px solid #ddd;font-size:11px;vertical-align:top}
-    .der{text-align:right}
-    .peq{font-size:10px;color:#555}
-    tr.detalle td{background:#f5f3ea;border-bottom:1px solid #ddd}
-    .tolvas-pdf{font-size:10px;color:#444;line-height:1.5}
-    .subt-wrap{display:flex;gap:18px;flex-wrap:wrap;margin-top:8px}
-    .subt-box{flex:1;min-width:240px}
-    .subt-box h3{font-family:Georgia,serif;font-size:14px;color:#1a2e1a;margin:0 0 6px;border-bottom:1px solid #2f5d34;padding-bottom:3px}
-    table.subt td{border-bottom:1px solid #eee;padding:4px 6px}
-    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #ccc;font-size:10px;color:#888;text-align:center}
-    .tot-final{background:#1a2e1a;color:#fff;padding:10px 14px;border-radius:6px;display:flex;justify-content:space-between;font-size:15px;font-weight:bold;margin-bottom:14px}
-    @media print{body{padding:10px}th{background:#2f5d34 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}tr.detalle td{background:#f5f3ea !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot-final{background:#1a2e1a !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-  </style></head><body>
-    <div class="head">
-      <h1>🌾 Cosecha — ${modo==='detalle'?'Reporte detallado':'Resumen'}</h1>
-      <div class="meta">
-        <b>Período:</b> ${rangoF} &nbsp;·&nbsp; <b>Campo(s):</b> ${campos.length?esc(campos.join(', ')):'Todos'}<br>
-        <b>Camiones:</b> ${nCam} &nbsp;·&nbsp; <b>Bolsones:</b> ${nBol} &nbsp;·&nbsp; <b>Generado:</b> ${fechaLinda(hoy())} ${ahoraHora()}
-      </div>
-      <div class="total">Total: ${kg(total)}</div>
-    </div>
+  let y=doc.lastAutoTable.finalY+16;
 
-    <table>
-      <thead><tr>${filaCabecera}</tr></thead>
-      <tbody>${filas}</tbody>
-    </table>
+  // Total general
+  doc.setFillColor(26,46,26); doc.roundedRect(40,y,W-80,26,4,4,'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text('TOTAL GENERAL',52,y+17);
+  doc.text(kg(total),W-52,y+17,{align:'right'});
+  y+=40;
 
-    <div class="tot-final"><span>TOTAL GENERAL</span><span>${kg(total)}</span></div>
+  // Subtotales
+  const subt=(campo)=>{ const m={}; regs.forEach(([id,r])=>{ const k=r[campo]||'(sin dato)'; m[k]=(m[k]||0)+(Number(r.kg)||0); }); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
+  const bloqueSub=(titulo,arr,x)=>{
+    doc.setTextColor(26,46,26); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(titulo,x,y);
+    doc.autoTable({
+      startY:y+5,
+      body:arr.map(([k,v])=>[k,nkg(v)+' kg',Math.round(v/total*100)+'%']),
+      theme:'plain',
+      bodyStyles:{fontSize:8,textColor:[31,38,28]},
+      columnStyles:{1:{halign:'right',fontStyle:'bold'},2:{halign:'right',textColor:[120,120,120]}},
+      margin:{left:x,right:40},
+      tableWidth:(W-80)/2-10
+    });
+  };
+  bloqueSub('Total por campo',subt('campo'),40);
+  const yGuardado=y;
+  bloqueSub('Total por cultivo',subt('cultivo'),W/2+5);
 
-    <div class="subt-wrap">
-      ${subtHTML('Total por campo',porCampo)}
-      ${subtHTML('Total por cultivo',porCultivo)}
-    </div>
+  // Pie
+  const yFin=doc.internal.pageSize.getHeight()-24;
+  doc.setTextColor(150,150,150); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text('Generado por la app Cosecha · '+fechaLinda(hoy())+' '+ahoraHora(),W/2,yFin,{align:'center'});
 
-    <div class="footer">Generado por la app Cosecha · ${fechaLinda(hoy())} ${ahoraHora()} · Usuario: ${esc(sesion.nombre)}</div>
-  </body></html>`;
+  // Nombre del archivo
+  const stamp=hoy().replace(/-/g,'')+'_'+ahoraHora().replace(':','');
+  const nombre='cosecha_'+(modo==='detalle'?'detallado':'resumen')+'_'+stamp+'.pdf';
 
-  const w=window.open('','_blank');
-  if(!w){toast('Permití las ventanas emergentes para generar el PDF');return;}
-  w.document.write(html);
-  w.document.close();
-  setTimeout(()=>{ w.focus(); w.print(); },400);
+  compartirODescargarPDF(doc,nombre);
+}
+
+async function compartirODescargarPDF(doc,nombre){
+  const blob=doc.output('blob');
+  const file=new File([blob],nombre,{type:'application/pdf'});
+  // Si el teléfono soporta compartir archivos, abrimos el menú de compartir
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file],title:'Cosecha',text:'Reporte de cosecha'});
+      return;
+    }catch(e){ /* si cancela, no hacemos nada */ return; }
+  }
+  // Si no (ej: computadora), descargamos el archivo directo
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=nombre;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('PDF descargado');
 }
 
 function renderCosechado(){
