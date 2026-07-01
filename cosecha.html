@@ -104,6 +104,18 @@
   .btn.gris{background:var(--gris)}
   .btn.rojo{background:var(--rojo)}
   .btn.linea{background:none;color:var(--campo);border:1.5px solid var(--campo)}
+  /* Botones PDF llamativos */
+  .btn-pdf{border:none;border-radius:11px;padding:11px 18px;font-size:14px;font-weight:800;cursor:pointer;
+    color:#fff;display:inline-flex;align-items:center;gap:7px;box-shadow:0 3px 8px rgba(47,93,52,.28);transition:transform .1s,box-shadow .1s}
+  .btn-pdf:active{transform:translateY(1px);box-shadow:0 1px 4px rgba(47,93,52,.28)}
+  .btn-pdf.verde{background:linear-gradient(135deg,#3a8a4a,#2f5d34)}
+  .btn-pdf.naranja{background:linear-gradient(135deg,#e08a2b,#c56a15)}
+  .btn-pdf .ic{font-size:17px}
+  .panel-pdf{background:linear-gradient(135deg,#f0f6ee,#eef4ec);border:1px solid #cfe0c8;border-radius:14px;
+    padding:14px 16px;margin-bottom:14px;box-shadow:var(--sombra)}
+  .panel-pdf .titulo-pdf{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--campo);font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .panel-pdf .fila-pdf{display:flex;gap:10px;flex-wrap:wrap}
+  .acciones-gestion{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
   .btn-cancelar{background:none;color:var(--gris);border:1.5px solid var(--gris-cl);padding:12px 18px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;width:100%;margin-top:8px}
 
   /* ---------- AUTOCOMPLETE ---------- */
@@ -457,17 +469,21 @@
 
       <div class="total-grande"><div><div class="et">Total filtrado</div><div class="num" id="cos-total">0 kg</div></div><div style="font-size:30px">⚖️</div></div>
 
-      <div class="barra-acciones">
+      <div class="panel-pdf">
+        <div class="titulo-pdf">📄 Descargar reportes (según filtros)</div>
+        <div class="fila-pdf">
+          <button class="btn-pdf verde" onclick="generarPDF('resumen')"><span class="ic">📄</span> PDF resumen</button>
+          <button class="btn-pdf naranja" onclick="generarPDF('detalle')"><span class="ic">📋</span> PDF detallado (con tolvas)</button>
+        </div>
+      </div>
+
+      <div class="acciones-gestion">
         <span class="cuenta-sel" id="cos-cuenta-sel">0 seleccionados</span>
         <button class="btn peq rojo" onclick="pedirBorrarSeleccionados()">🗑️ Borrar seleccionados</button>
         <button class="btn peq gris" onclick="limpiarSeleccion()">Quitar selección</button>
         <button class="btn peq linea" onclick="pedirNumerarCamiones()">🔢 Numerar camiones sin número</button>
       </div>
-      <div class="barra-acciones" style="margin-top:-4px">
-        <button class="btn peq sec" onclick="generarPDF('resumen')">📄 PDF resumen</button>
-        <button class="btn peq sec" onclick="generarPDF('detalle')">📋 PDF detallado (con tolvas)</button>
-      </div>
-      <p class="sub" style="margin-top:-6px;font-size:12px">Los PDF respetan los filtros aplicados. En computadora: clic + <b>Ctrl</b> o <b>Shift</b> para elegir varios, y <b>Supr</b> para borrar.</p>
+      <p class="sub" style="margin-top:-2px;font-size:12px">En computadora: clic + <b>Ctrl</b> o <b>Shift</b> para elegir varios, y <b>Supr</b> para borrar.</p>
 
       <div id="lista-cosechado"></div>
     </section>
