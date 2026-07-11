@@ -439,6 +439,8 @@
 
           <div class="tolvas-lista" id="tolvas-lista"></div>
 
+          <div id="panel-cambio-lote" style="display:none;margin-top:14px"></div>
+
           <button class="btn rojo" style="margin-top:14px" onclick="pedirCerrar()">✅ Cerrar camión/bolsón</button>
           <button class="btn-cancelar" style="margin-top:10px" onclick="pedirDescartar()">❌ Descartar (no guardar)</button>
         </div>
@@ -615,6 +617,18 @@
   </div>
 </div>
 
+<!-- ===== MODAL CAMBIAR LOTE/CAMPO ===== -->
+<div class="modal-bg" id="modal-cambio-lote">
+  <div class="modal">
+    <div class="modal-head"><h3>Cambiar lote/campo</h3><button class="modal-cerrar" onclick="cerrar('modal-cambio-lote')">×</button></div>
+    <p class="sub" id="cambio-info">El camión sigue siendo el mismo. Las tolvas que ya cargaste quedan con su lote; las nuevas se cargan en el lote que elijas.</p>
+    <div class="campo-form autobox"><label>🏡 Nuevo campo</label><input id="cambio-campo" placeholder="Campo" autocomplete="off" oninput="autocCambio('campo',this)"><div class="sugerencias" id="sug-cambio-campo"></div></div>
+    <div class="campo-form autobox"><label>📍 Nuevo lote</label><input id="cambio-lote" placeholder="Lote" autocomplete="off" oninput="autocCambio('lote',this)"><div class="sugerencias" id="sug-cambio-lote"></div></div>
+    <button class="btn" onclick="guardarCambioLote()">Cambiar y seguir cargando</button>
+    <button class="btn-cancelar" onclick="cerrar('modal-cambio-lote')">Cancelar</button>
+  </div>
+</div>
+
 <!-- ===== MODAL COMPARTIR ===== -->
 <div class="modal-bg" id="modal-compartir">
   <div class="modal">
@@ -658,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=2; // se incrementa en cada versión nueva
+const VERSION_APP=3; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -1140,24 +1154,57 @@ function pintarPanel(r){
       <div class="marca"><div class="et">Tamaño</div><div class="num">${r.metros} mts</div></div>`;
     $('panel-prog-box').style.display='none';
   }
-  // tolvas
+  // Botón para cambiar lote/campo a mitad de carga (solo admin, solo camión)
+  const zonaCambio=$('panel-cambio-lote');
+  if(zonaCambio){
+    if(esCam && sesion.rol==='admin'){
+      zonaCambio.style.display='block';
+      const desg=desgloseLotes(r);
+      let htmlDesg='';
+      if(desg.length>1){
+        htmlDesg='<div style="margin-top:8px;font-size:12px;color:var(--gris)"><b>Cargado por lote:</b><br>'+
+          desg.map(d=>`📍 ${esc(d.campo)} · ${esc(d.lote)}: <b>${nkg(d.kg)} kg</b>`).join('<br>')+'</div>';
+      }
+      zonaCambio.innerHTML=`<button class="btn peq linea" style="width:100%" onclick="abrirCambioLote()">📍 Cambiar lote/campo (mismo camión)</button>${htmlDesg}`;
+    }else{
+      zonaCambio.style.display='none';
+    }
+  }
+  // tolvas (mostrando el lote de cada una si el camión tiene más de un lote)
   const tolvas=Object.entries(r.tolvas||{}).sort((a,b)=>(a[1].t||0)-(b[1].t||0));
+  const variosLotes=desgloseLotes(r).length>1;
   const cont=$('tolvas-lista');
   if(!tolvas.length){cont.innerHTML='<p class="sub" style="text-align:center;margin:10px 0 0">Todavía no se cargó ninguna tolva.</p>';}
   else{
     cont.innerHTML='<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:8px 0">Tolvas cargadas ('+tolvas.length+')</h4>'+
       tolvas.map(([tid,t])=>`<div class="tolva-item">
-        <div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}</div></div>
+        <div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}${variosLotes&&t.lote?(' · 📍 '+esc(t.lote)):''}</div></div>
         <div style="display:flex;gap:2px"><button onclick="editarTolvaActiva('${tid}')" title="Editar kilos">✏️</button><button onclick="borrarTolva('${tid}')" title="Borrar tolva">🗑️</button></div></div>`).join('');
   }
+}
+
+// Agrupa las tolvas de un registro/abierto por campo+lote y devuelve subtotales
+function desgloseLotes(r){
+  const tolvas=Object.values(r.tolvas||{});
+  const m={};
+  tolvas.forEach(t=>{
+    const campo=t.campo||r.campo||'—';
+    const lote=t.lote||r.lote||'—';
+    const k=campo+'|||'+lote;
+    if(!m[k])m[k]={campo,lote,kg:0,n:0};
+    m[k].kg+=Number(t.kg)||0; m[k].n++;
+  });
+  return Object.values(m).sort((a,b)=>b.kg-a.kg);
 }
 
 function sumarTolva(){
   if(!abiertoActivoId)return;
   const inp=$('c-tolva'); const v=Number(inp.value);
   if(!v||v<=0)return toast('Poné los kilos de la tolva');
+  const r=abiertos[abiertoActivoId]||{};
   const tid=uid();
-  const t={kg:v,usuario:sesion.nombre,hora:ahoraHora(),t:Date.now()};
+  // cada tolva queda sellada con el campo y lote donde se cargó (para sumar kg por lote/campo)
+  const t={kg:v,usuario:sesion.nombre,hora:ahoraHora(),t:Date.now(),campo:r.campo||'',lote:r.lote||''};
   guardar('abiertos/'+abiertoActivoId+'/tolvas/'+tid,t);
   inp.value=''; inp.focus();
 }
@@ -1173,6 +1220,51 @@ function editarTolvaActiva(tid){
   $('mt-info').textContent='Cargada por '+(t.usuario||'—')+(t.hora?(' a las '+t.hora):'');
   $('mt-kg').value=t.kg||'';
   abrir('modal-tolva');
+}
+
+/* ===== CAMBIO DE LOTE/CAMPO A MITAD DE UN CAMIÓN (solo admin) ===== */
+function abrirCambioLote(){
+  if(sesion.rol!=='admin'||!abiertoActivoId)return;
+  const r=abiertos[abiertoActivoId]; if(!r||r.tipo!=='camion')return;
+  const cargado=sumaTolvas(r);
+  const restan=(Number(r.total)||0)-cargado;
+  $('cambio-info').innerHTML=`Camión Nº${r.numDia||'?'} (${esc(r.patente||'')}). Ya lleva <b>${nkg(cargado)} kg</b>${restan>0?(', restan <b>'+nkg(restan)+' kg</b>'):''}. Las tolvas ya cargadas conservan su lote; las próximas irán al nuevo lote.`;
+  $('cambio-campo').value=r.campo||'';
+  $('cambio-lote').value='';
+  abrir('modal-cambio-lote');
+  setTimeout(()=>$('cambio-lote').focus(),200);
+}
+function autocCambio(campo,input){
+  const cont=$('sug-cambio-'+campo);
+  const v=norm(input.value);
+  let lista=valoresUnicos(campo);
+  if(v)lista=lista.filter(x=>norm(x).includes(v));
+  lista=lista.slice(0,8);
+  if(!lista.length||!input.value){cont.style.display='none';return;}
+  cont.innerHTML=lista.map(x=>`<div onmousedown="$('cambio-${campo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-cambio-${campo}').style.display='none'">${esc(x)}</div>`).join('');
+  cont.style.display='block';
+}
+function guardarCambioLote(){
+  if(sesion.rol!=='admin'||!abiertoActivoId)return;
+  const nuevoCampo=$('cambio-campo').value.trim();
+  const nuevoLote=$('cambio-lote').value.trim();
+  if(!nuevoCampo)return toast('Poné el campo');
+  if(!nuevoLote)return toast('Poné el lote');
+  const r=abiertos[abiertoActivoId]||{};
+  const updates={};
+  // Primero: sellar las tolvas que todavía no tengan campo/lote, con el lote ACTUAL (el que están dejando)
+  Object.entries(r.tolvas||{}).forEach(([tid,t])=>{
+    if(!t.campo)updates['abiertos/'+abiertoActivoId+'/tolvas/'+tid+'/campo']=r.campo||'';
+    if(!t.lote)updates['abiertos/'+abiertoActivoId+'/tolvas/'+tid+'/lote']=r.lote||'';
+  });
+  // Luego: cambiar el campo/lote del camión (las próximas tolvas se sellan con el nuevo)
+  updates['abiertos/'+abiertoActivoId+'/campo']=nuevoCampo;
+  updates['abiertos/'+abiertoActivoId+'/lote']=nuevoLote;
+  // Actualizar la pizarra común para que los invitados vean el nuevo lote
+  updates['comunes/campo']=nuevoCampo;
+  updates['comunes/lote']=nuevoLote;
+  actualizar(updates,'Lote cambiado. Seguí cargando el mismo camión');
+  cerrar('modal-cambio-lote');
 }
 
 function pedirCerrar(){
@@ -1201,11 +1293,18 @@ function descartarCarga(){
 function cerrarCarga(){
   if(!abiertoActivoId)return;
   const r=abiertos[abiertoActivoId];
+  // sellar tolvas sin campo/lote con el del camión (por compatibilidad con tolvas viejas)
+  const tolvasSelladas={};
+  Object.entries(r.tolvas||{}).forEach(([tid,t])=>{
+    tolvasSelladas[tid]={...t, campo:t.campo||r.campo||'', lote:t.lote||r.lote||''};
+  });
   const cargado=sumaTolvas(r);
-  const participantes=[...new Set(Object.values(r.tolvas||{}).map(t=>t.usuario))];
+  const participantes=[...new Set(Object.values(tolvasSelladas).map(t=>t.usuario))];
+  const desglose=desgloseLotes({tolvas:tolvasSelladas,campo:r.campo,lote:r.lote});
   const reg={
     tipo:r.tipo,fecha:r.fecha,campo:r.campo,lote:r.lote,cultivo:r.cultivo,
-    kg:cargado,tolvas:r.tolvas||{},participantes,
+    kg:cargado,tolvas:tolvasSelladas,participantes,
+    desglose: desglose.length>1 ? desglose : null,
     cerradoPor:sesion.nombre,cerrado:Date.now(),creado:r.creado||Date.now()
   };
   if(r.tipo==='camion'){
@@ -1311,16 +1410,26 @@ function construirPDF(modo,regs){
   const body=[];
   regs.forEach(([id,r])=>{
     const ref = r.tipo==='camion'?(r.patente||'—'):((r.bolnombre||'—')+(r.metros?(' ('+r.metros+'m)'):''));
+    const desg=desgloseLotes(r);
+    const variosLotes=desg.length>1;
     body.push([
       r.tipo==='camion'?(r.numDia||'—'):'—',
       r.tipo==='camion'?'Camión':'Bolsón',
-      ref, fechaLinda(r.fecha), r.campo||'—', r.lote||'—', r.cultivo||'—',
+      ref, fechaLinda(r.fecha),
+      variosLotes?'Varios':(r.campo||'—'),
+      variosLotes?'Varios':(r.lote||'—'),
+      r.cultivo||'—',
       nkg(r.kg), regParticipantes(r)
     ]);
+    // desglose por lote (siempre que sea multi-lote, en ambos PDF, porque es dato de pago)
+    if(variosLotes){
+      const txt='Por lote: '+desg.map(d=>d.campo+' / '+d.lote+' = '+nkg(d.kg)+'kg').join('   ·   ');
+      body.push([{content:txt,colSpan:9,styles:{fillColor:[252,239,220],textColor:[150,90,20],fontSize:7,fontStyle:'bold'}}]);
+    }
     if(modo==='detalle'){
       const tolvas=Object.values(r.tolvas||{}).sort((a,b)=>(a.t||0)-(b.t||0));
       if(tolvas.length){
-        const txt='Tolvas: '+tolvas.map(t=>nkg(t.kg)+'kg ('+(t.usuario||'—')+(t.hora?(' '+t.hora):'')+')').join('  ·  ');
+        const txt='Tolvas: '+tolvas.map(t=>nkg(t.kg)+'kg ('+(t.usuario||'—')+(t.hora?(' '+t.hora):'')+(variosLotes&&t.lote?(' - '+t.lote):'')+')').join('  ·  ');
         body.push([{content:txt,colSpan:9,styles:{fillColor:[245,243,234],textColor:[80,80,80],fontSize:7,fontStyle:'italic'}}]);
       }
     }
@@ -1348,11 +1457,23 @@ function construirPDF(modo,regs){
 
   // Subtotales
   const subt=(campo)=>{ const m={}; regs.forEach(([id,r])=>{ const k=r[campo]||'(sin dato)'; m[k]=(m[k]||0)+(Number(r.kg)||0); }); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
-  const bloqueSub=(titulo,arr,x)=>{
+  // Subtotal por LOTE y por CAMPO: sumando desde las tolvas (exacto aunque haya camiones multi-lote)
+  const subtPorTolva=(campos)=>{
+    const m={};
+    regs.forEach(([id,r])=>{
+      const desg=desgloseLotes(r);
+      desg.forEach(d=>{
+        const k=campos==='lote'?(d.campo+' · '+d.lote):d.campo;
+        m[k]=(m[k]||0)+d.kg;
+      });
+    });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  };
+  const bloqueSub=(titulo,arr,x,yy)=>{
     doc.setTextColor(26,46,26); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-    doc.text(titulo,x,y);
+    doc.text(titulo,x,yy);
     doc.autoTable({
-      startY:y+5,
+      startY:yy+5,
       body:arr.map(([k,v])=>[k,nkg(v)+' kg',Math.round(v/total*100)+'%']),
       theme:'plain',
       bodyStyles:{fontSize:8,textColor:[31,38,28]},
@@ -1360,10 +1481,14 @@ function construirPDF(modo,regs){
       margin:{left:x,right:40},
       tableWidth:(W-80)/2-10
     });
+    return doc.lastAutoTable.finalY;
   };
-  bloqueSub('Total por campo',subt('campo'),40);
-  const yGuardado=y;
-  bloqueSub('Total por cultivo',subt('cultivo'),W/2+5);
+  const yA=bloqueSub('Total por campo',subtPorTolva('campo'),40,y);
+  const yB=bloqueSub('Total por cultivo',subt('cultivo'),W/2+5,y);
+  // Total por lote (importante para el rinde/pago), a lo ancho, debajo
+  y=Math.max(yA,yB)+18;
+  if(y>doc.internal.pageSize.getHeight()-120){ doc.addPage(); y=50; }
+  bloqueSub('Total por lote (rinde)',subtPorTolva('lote'),40,y);
 
   // Pie
   const yFin=doc.internal.pageSize.getHeight()-24;
@@ -1406,6 +1531,11 @@ function renderCosechado(){
   cont.innerHTML=regs.map(([id,r],idx)=>{
     const tolvas=Object.entries(r.tolvas||{}).sort((a,b)=>(a[1].t||0)-(b[1].t||0));
     const sel=seleccion.has(id);
+    const desg=desgloseLotes(r);
+    const variosLotes=desg.length>1;
+    const metaCampoLote = variosLotes
+      ? `🏡 Varios: ${desg.map(d=>esc(d.lote)).join(', ')}`
+      : `🏡 ${esc(r.campo||'—')} · 📍 ${esc(r.lote||'—')}`;
     return `<div class="registro ${r.tipo} ${sel?'sel':''}" id="reg-${id}" data-idx="${idx}" data-id="${id}">
       <div class="reg-head" onclick="clickRegistro(event,'${id}',${idx})">
         <div class="reg-check"><input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();toggleSel('${id}',${idx},event)"></div>
@@ -1413,15 +1543,17 @@ function renderCosechado(){
           <div class="reg-top">
             <span class="etiqueta ${r.tipo==='camion'?'et-camion':'et-bolson'}">${r.tipo==='camion'?'Camión':'Bolsón'}</span>
             <span class="reg-titulo">${refLinda(r)}</span>
+            ${variosLotes?'<span class="etiqueta" style="background:#e08a2b;color:#fff">Multi-lote</span>':''}
           </div>
-          <div class="reg-meta">📅 ${fechaLinda(r.fecha)} · 🏡 ${esc(r.campo||'—')} · 📍 ${esc(r.lote||'—')} · 🌱 ${esc(r.cultivo||'—')}</div>
+          <div class="reg-meta">📅 ${fechaLinda(r.fecha)} · ${metaCampoLote} · 🌱 ${esc(r.cultivo||'—')}</div>
           <div class="reg-meta">👤 ${esc(regParticipantes(r))}</div>
         </div>
         <div style="text-align:right"><div class="reg-kg">${kg(r.kg)}</div><div class="reg-flecha">▶</div></div>
       </div>
       <div class="reg-det">
+        ${variosLotes?`<h4>Kilos por campo / lote</h4>${desg.map(d=>`<div class="tolva-item" style="border-left-color:#e08a2b"><div><div class="ti-kg">${nkg(d.kg)} kg</div><div class="ti-meta">🏡 ${esc(d.campo)} · 📍 ${esc(d.lote)} · ${d.n} tolva${d.n===1?'':'s'}</div></div></div>`).join('')}`:''}
         <h4>Tolvas que conformaron estos kilos (${tolvas.length})</h4>
-        ${tolvas.length?tolvas.map(([tid,t])=>`<div class="tolva-item"><div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}</div></div><div style="display:flex;gap:2px"><button onclick="editarTolvaReg('${id}','${tid}')" title="Editar kilos">✏️</button><button onclick="borrarTolvaReg('${id}','${tid}')" title="Borrar tolva">🗑️</button></div></div>`).join(''):'<p class="sub">Sin detalle de tolvas.</p>'}
+        ${tolvas.length?tolvas.map(([tid,t])=>`<div class="tolva-item"><div><div class="ti-kg">${nkg(t.kg)} kg</div><div class="ti-meta">👤 ${esc(t.usuario)} · 🕒 ${t.hora||''}${variosLotes?(' · 📍 '+esc(t.lote||r.lote||'—')):''}</div></div><div style="display:flex;gap:2px"><button onclick="editarTolvaReg('${id}','${tid}')" title="Editar kilos">✏️</button><button onclick="borrarTolvaReg('${id}','${tid}')" title="Borrar tolva">🗑️</button></div></div>`).join(''):'<p class="sub">Sin detalle de tolvas.</p>'}
         <div class="reg-acc">
           <button class="btn peq linea" onclick="abrirEdit('${id}')">✏️ Editar</button>
           <button class="btn peq rojo" onclick="pedirBorrarUno('${id}')">🗑️ Borrar</button>
