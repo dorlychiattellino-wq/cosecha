@@ -672,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=3; // se incrementa en cada versión nueva
+const VERSION_APP=4; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -951,6 +951,8 @@ function autoc(campo,input){
 function elegirSug(campo,val){
   const map={cultivo:'c-cultivo',campo:'c-campo',lote:'c-lote',patente:'c-patente',bolson:'c-bolnombre'};
   $(map[campo]).value=val; $('sug-'+campo).style.display='none';
+  // compartir el valor COMPLETO elegido a la pizarra común (solo los campos compartidos)
+  if(campo==='cultivo'||campo==='campo'||campo==='lote')guardarComun(campo,val);
 }
 document.addEventListener('click',e=>{ if(!e.target.closest('.autobox'))document.querySelectorAll('.sugerencias').forEach(s=>s.style.display='none'); });
 
@@ -978,11 +980,11 @@ function datosComunes(){
 }
 
 /* ===== PIZARRA COMÚN: fecha/cultivo/campo/lote compartidos en tiempo real ===== */
-let guardarComunTimer=null;
+let guardarComunTimers={};
 function guardarComun(campo,valor){
-  // se guarda en Firebase para que todos lo vean; con pequeño retardo para no saturar al tipear
-  clearTimeout(guardarComunTimer);
-  guardarComunTimer=setTimeout(()=>{ if(db)db.ref('comunes/'+campo).set(valor); },250);
+  // se guarda en Firebase para que todos lo vean; retardo por campo para no saturar al tipear
+  clearTimeout(guardarComunTimers[campo]);
+  guardarComunTimers[campo]=setTimeout(()=>{ if(db)db.ref('comunes/'+campo).set(valor); },250);
 }
 function aplicarComunes(){
   if(!sesion)return;
@@ -1293,6 +1295,7 @@ function descartarCarga(){
 function cerrarCarga(){
   if(!abiertoActivoId)return;
   const r=abiertos[abiertoActivoId];
+  if(!r){toast('⚠️ Este camión ya fue cerrado por otro usuario');return;}
   // sellar tolvas sin campo/lote con el del camión (por compatibilidad con tolvas viejas)
   const tolvasSelladas={};
   Object.entries(r.tolvas||{}).forEach(([tid,t])=>{
@@ -1314,7 +1317,10 @@ function cerrarCarga(){
     reg.numDia = r.numDia || numeroCamionDelDia(r.fecha, abiertoActivoId);
   }
   else{reg.bolnombre=r.bolnombre;reg.metros=r.metros||0;}
-  const rid=uid();
+  // ANTI-DUPLICADOS: el registro usa el MISMO id que tenía el camión abierto.
+  // Si dos operarios cierran el mismo camión (ej: uno sin internet), ambos cierres
+  // escriben sobre el mismo registro y el segundo pisa al primero con los mismos datos.
+  const rid=abiertoActivoId;
   const updates={}; updates['registros/'+rid]=reg; updates['abiertos/'+abiertoActivoId]=null;
   actualizar(updates,'Guardado en kilos cosechados');
   // los comunes (fecha/campo/lote/cultivo) son compartidos y se conservan solos
