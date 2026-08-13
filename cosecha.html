@@ -672,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=4; // se incrementa en cada versión nueva
+const VERSION_APP=5; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -938,10 +938,30 @@ function valoresUnicos(campo){
   Object.values(abiertos).forEach(r=>{ if(r[campo])set.add(r[campo]); });
   return [...set].sort((a,b)=>a.localeCompare(b));
 }
+// Lotes que pertenecen a un campo específico (mirando registros, abiertos y tolvas selladas)
+function lotesDelCampo(nombreCampo){
+  const n=norm(nombreCampo);
+  const set=new Set();
+  const revisar=r=>{
+    if(norm(r.campo)===n && r.lote)set.add(r.lote);
+    // tolvas selladas de camiones multi-lote
+    Object.values(r.tolvas||{}).forEach(t=>{ if(norm(t.campo)===n && t.lote)set.add(t.lote); });
+  };
+  Object.values(registros).forEach(revisar);
+  Object.values(abiertos).forEach(revisar);
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
 function autoc(campo,input){
   const cont=$('sug-'+campo);
   const v=norm(input.value);
-  let lista=valoresUnicos(campo);
+  let lista;
+  // Si estoy escribiendo el LOTE y ya hay un campo elegido: sugerir solo los lotes de ese campo
+  if(campo==='lote'){
+    const campoActual=$('c-campo').value.trim();
+    lista = campoActual ? lotesDelCampo(campoActual) : valoresUnicos('lote');
+  }else{
+    lista=valoresUnicos(campo);
+  }
   if(v)lista=lista.filter(x=>norm(x).includes(v));
   lista=lista.slice(0,8);
   if(!lista.length||!input.value){cont.style.display='none';return;}
@@ -1239,7 +1259,13 @@ function abrirCambioLote(){
 function autocCambio(campo,input){
   const cont=$('sug-cambio-'+campo);
   const v=norm(input.value);
-  let lista=valoresUnicos(campo);
+  let lista;
+  if(campo==='lote'){
+    const campoActual=$('cambio-campo').value.trim();
+    lista = campoActual ? lotesDelCampo(campoActual) : valoresUnicos('lote');
+  }else{
+    lista=valoresUnicos(campo);
+  }
   if(v)lista=lista.filter(x=>norm(x).includes(v));
   lista=lista.slice(0,8);
   if(!lista.length||!input.value){cont.style.display='none';return;}
