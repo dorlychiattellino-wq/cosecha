@@ -459,7 +459,7 @@
           <div class="campo-form"><label>Hasta</label><input type="date" id="f-hasta"></div>
         </div>
         <div class="fila2">
-          <div class="campo-form"><label>Campo</label><select id="f-campo"><option value="">Todos</option></select></div>
+          <div class="campo-form"><label>Campo</label><select id="f-campo" onchange="actualizarFiltroLotes()"><option value="">Todos</option></select></div>
           <div class="campo-form"><label>Lote</label><select id="f-lote"><option value="">Todos</option></select></div>
         </div>
         <div class="fila2">
@@ -672,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=5; // se incrementa en cada versión nueva
+const VERSION_APP=6; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -1367,10 +1367,18 @@ function llenarSelect(id,valores,actual){
 function prepararFiltrosCos(){
   $('f-campo').dataset.todos='Todos'; $('f-lote').dataset.todos='Todos'; $('f-cultivo').dataset.todos='Todos'; $('f-user').dataset.todos='Todos';
   llenarSelect('f-campo',valoresUnicos('campo'));
-  llenarSelect('f-lote',valoresUnicos('lote'));
+  actualizarFiltroLotes();
   llenarSelect('f-cultivo',valoresUnicos('cultivo'));
   const users=new Set(); Object.values(registros).forEach(r=>(r.participantes||[]).forEach(p=>users.add(p)));
   llenarSelect('f-user',[...users].sort());
+}
+// El desplegable de Lote muestra solo los lotes del campo elegido en el filtro
+function actualizarFiltroLotes(){
+  const campoSel=$('f-campo').value;
+  const lotes = campoSel ? lotesDelCampo(campoSel) : valoresUnicos('lote');
+  const actual=$('f-lote').value;
+  // si el lote elegido no pertenece al campo nuevo, se limpia
+  llenarSelect('f-lote',lotes, lotes.includes(actual)?actual:'');
 }
 function limpiarFiltrosCos(){
   ['f-desde','f-hasta','f-campo','f-lote','f-cultivo','f-tipo','f-user'].forEach(i=>$(i).value='');
@@ -1382,8 +1390,12 @@ function registrosFiltrados(){
   const d=$('f-desde').value,h=$('f-hasta').value,ca=$('f-campo').value,lo=$('f-lote').value,cu=$('f-cultivo').value,ti=$('f-tipo').value,us=$('f-user').value;
   return Object.entries(registros).filter(([id,r])=>{
     if(!entreFechas(r.fecha,d,h))return false;
-    if(ca&&r.campo!==ca)return false;
-    if(lo&&r.lote!==lo)return false;
+    // campo/lote: un camión multi-lote cuenta si CUALQUIERA de sus tramos coincide
+    if(ca||lo){
+      const desg=desgloseLotes(r);
+      if(ca && !desg.some(x=>x.campo===ca))return false;
+      if(lo && !desg.some(x=>x.lote===lo))return false;
+    }
     if(cu&&r.cultivo!==cu)return false;
     if(ti&&r.tipo!==ti)return false;
     if(us&&!(r.participantes||[]).includes(us))return false;
