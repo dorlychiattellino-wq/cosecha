@@ -672,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=6; // se incrementa en cada versión nueva
+const VERSION_APP=7; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -1219,6 +1219,15 @@ function desgloseLotes(r){
   return Object.values(m).sort((a,b)=>b.kg-a.kg);
 }
 
+// Kilos de un registro que corresponden al filtro de campo/lote activo.
+// Si no hay filtro, devuelve el total del registro. Si hay, suma solo los tramos coincidentes.
+function kgSegunFiltro(r,ca,lo){
+  if(!ca&&!lo)return Number(r.kg)||0;
+  return desgloseLotes(r)
+    .filter(d=>(!ca||d.campo===ca)&&(!lo||d.lote===lo))
+    .reduce((s,d)=>s+d.kg,0);
+}
+
 function sumarTolva(){
   if(!abiertoActivoId)return;
   const inp=$('c-tolva'); const v=Number(inp.value);
@@ -1435,7 +1444,10 @@ function construirPDF(modo,regs){
   const doc=new jsPDF({unit:'pt',format:'a4'});
   const W=doc.internal.pageSize.getWidth();
 
-  const total=regs.reduce((s,[id,r])=>s+(Number(r.kg)||0),0);
+  // filtros activos de campo/lote: el PDF suma solo la porción coincidente de cada camión
+  const fCa=$('f-campo').value, fLo=$('f-lote').value;
+  const hayFiltroCL=!!(fCa||fLo);
+  const total=regs.reduce((s,[id,r])=>s+kgSegunFiltro(r,fCa,fLo),0);
   const nCam=regs.filter(([id,r])=>r.tipo==='camion').length;
   const nBol=regs.filter(([id,r])=>r.tipo==='bolson').length;
   const campos=[...new Set(regs.map(([id,r])=>r.campo).filter(Boolean))];
@@ -1447,7 +1459,8 @@ function construirPDF(modo,regs){
   doc.setTextColor(217,180,74); doc.setFont('helvetica','bold'); doc.setFontSize(20);
   doc.text('Cosecha — '+(modo==='detalle'?'Reporte detallado':'Resumen'),40,32);
   doc.setTextColor(255,255,255); doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text('Período: '+rangoF+'   ·   Campo(s): '+(campos.length?campos.join(', '):'Todos'),40,48);
+  const filtroTxt = hayFiltroCL ? ('   ·   FILTRO: '+(fCa?('Campo '+fCa):'')+(fCa&&fLo?' / ':'')+(fLo?('Lote '+fLo):'')) : '';
+  doc.text('Período: '+rangoF+'   ·   Campo(s): '+(campos.length?campos.join(', '):'Todos')+filtroTxt,40,48);
   doc.text('Camiones: '+nCam+'   ·   Bolsones: '+nBol+'   ·   Generado: '+fechaLinda(hoy())+' '+ahoraHora()+'   ·   Por: '+sesion.nombre,40,61);
 
   // Tabla principal
@@ -1456,6 +1469,8 @@ function construirPDF(modo,regs){
     const ref = r.tipo==='camion'?(r.patente||'—'):((r.bolnombre||'—')+(r.metros?(' ('+r.metros+'m)'):''));
     const desg=desgloseLotes(r);
     const variosLotes=desg.length>1;
+    const kgMatch=kgSegunFiltro(r,fCa,fLo);
+    const esParcial=hayFiltroCL&&kgMatch<(Number(r.kg)||0);
     body.push([
       r.tipo==='camion'?(r.numDia||'—'):'—',
       r.tipo==='camion'?'Camión':'Bolsón',
@@ -1463,11 +1478,11 @@ function construirPDF(modo,regs){
       variosLotes?'Varios':(r.campo||'—'),
       variosLotes?'Varios':(r.lote||'—'),
       r.cultivo||'—',
-      nkg(r.kg), regParticipantes(r)
+      esParcial?(nkg(kgMatch)+' *'):nkg(r.kg), regParticipantes(r)
     ]);
     // desglose por lote (siempre que sea multi-lote, en ambos PDF, porque es dato de pago)
     if(variosLotes){
-      const txt='Por lote: '+desg.map(d=>d.campo+' / '+d.lote+' = '+nkg(d.kg)+'kg').join('   ·   ');
+      const txt='Por lote: '+desg.map(d=>d.campo+' / '+d.lote+' = '+nkg(d.kg)+'kg').join('   ·   ')+(esParcial?('    (* en este reporte se cuenta solo lo del filtro: '+nkg(kgMatch)+'kg; total del camión: '+nkg(r.kg)+'kg)'):'');
       body.push([{content:txt,colSpan:9,styles:{fillColor:[252,239,220],textColor:[150,90,20],fontSize:7,fontStyle:'bold'}}]);
     }
     if(modo==='detalle'){
@@ -1500,13 +1515,16 @@ function construirPDF(modo,regs){
   y+=40;
 
   // Subtotales
-  const subt=(campo)=>{ const m={}; regs.forEach(([id,r])=>{ const k=r[campo]||'(sin dato)'; m[k]=(m[k]||0)+(Number(r.kg)||0); }); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
+  const subt=(campo)=>{ const m={}; regs.forEach(([id,r])=>{ const k=r[campo]||'(sin dato)'; m[k]=(m[k]||0)+kgSegunFiltro(r,fCa,fLo); }); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
   // Subtotal por LOTE y por CAMPO: sumando desde las tolvas (exacto aunque haya camiones multi-lote)
   const subtPorTolva=(campos)=>{
     const m={};
     regs.forEach(([id,r])=>{
       const desg=desgloseLotes(r);
       desg.forEach(d=>{
+        // con filtro activo, solo cuentan los tramos que coinciden
+        if(fCa&&d.campo!==fCa)return;
+        if(fLo&&d.lote!==fLo)return;
         const k=campos==='lote'?(d.campo+' · '+d.lote):d.campo;
         m[k]=(m[k]||0)+d.kg;
       });
@@ -1568,7 +1586,8 @@ function renderCosechado(){
   if(sesion.rol!=='admin')return;
   prepararFiltrosCos();
   const regs=registrosFiltrados();
-  const total=regs.reduce((s,[id,r])=>s+(Number(r.kg)||0),0);
+  const fCa=$('f-campo').value, fLo=$('f-lote').value;
+  const total=regs.reduce((s,[id,r])=>s+kgSegunFiltro(r,fCa,fLo),0);
   $('cos-total').textContent=kg(total);
   const cont=$('lista-cosechado');
   if(!regs.length){cont.innerHTML='<div class="vacio"><span class="ico">📋</span>Sin registros para esta vista</div>';actualizarCuentaSel();return;}
@@ -1577,6 +1596,8 @@ function renderCosechado(){
     const sel=seleccion.has(id);
     const desg=desgloseLotes(r);
     const variosLotes=desg.length>1;
+    const kgMatch=kgSegunFiltro(r,fCa,fLo);
+    const esParcial=(fCa||fLo)&&kgMatch<(Number(r.kg)||0);
     const metaCampoLote = variosLotes
       ? `🏡 Varios: ${desg.map(d=>esc(d.lote)).join(', ')}`
       : `🏡 ${esc(r.campo||'—')} · 📍 ${esc(r.lote||'—')}`;
@@ -1592,7 +1613,7 @@ function renderCosechado(){
           <div class="reg-meta">📅 ${fechaLinda(r.fecha)} · ${metaCampoLote} · 🌱 ${esc(r.cultivo||'—')}</div>
           <div class="reg-meta">👤 ${esc(regParticipantes(r))}</div>
         </div>
-        <div style="text-align:right"><div class="reg-kg">${kg(r.kg)}</div><div class="reg-flecha">▶</div></div>
+        <div style="text-align:right"><div class="reg-kg">${esParcial?kg(kgMatch):kg(r.kg)}</div>${esParcial?`<div style="font-size:11px;color:var(--gris)">de ${kg(r.kg)} totales</div>`:''}<div class="reg-flecha">▶</div></div>
       </div>
       <div class="reg-det">
         ${variosLotes?`<h4>Kilos por campo / lote</h4>${desg.map(d=>`<div class="tolva-item" style="border-left-color:#e08a2b"><div><div class="ti-kg">${nkg(d.kg)} kg</div><div class="ti-meta">🏡 ${esc(d.campo)} · 📍 ${esc(d.lote)} · ${d.n} tolva${d.n===1?'':'s'}</div></div></div>`).join('')}`:''}
