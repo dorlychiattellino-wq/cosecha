@@ -629,6 +629,25 @@
   </div>
 </div>
 
+<!-- ===== MODAL HECTÁREAS ===== -->
+<div class="modal-bg" id="modal-ha">
+  <div class="modal">
+    <div class="modal-head"><h3>⚙️ Hectáreas por lote</h3><button class="modal-cerrar" onclick="cerrar('modal-ha')">×</button></div>
+    <p class="sub">Cargá las hectáreas sembradas de cada lote para esta campaña. Con eso la app calcula el rinde (kg/ha) solo.</p>
+    <div class="campo-form"><label>Campaña (año de cosecha)</label><select id="ha-anio" onchange="renderListaHa()"></select></div>
+    <button class="btn peq linea" style="width:100%;margin-bottom:12px" onclick="copiarHaAnterior()">📋 Copiar hectáreas del año anterior</button>
+    <div class="tarjeta" style="padding:12px">
+      <div class="campo-form autobox"><label>🏡 Campo</label><input id="ha-campo" placeholder="Campo" autocomplete="off" oninput="autocHa('campo',this)"><div class="sugerencias" id="sug-ha-campo"></div></div>
+      <div class="fila2">
+        <div class="campo-form autobox"><label>📍 Lote</label><input id="ha-lote" placeholder="Lote" autocomplete="off" oninput="autocHa('lote',this)"><div class="sugerencias" id="sug-ha-lote"></div></div>
+        <div class="campo-form"><label>Hectáreas</label><input id="ha-num" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 85"></div>
+      </div>
+      <button class="btn" onclick="agregarHa()">+ Agregar / actualizar</button>
+    </div>
+    <div id="ha-lista" style="margin-top:12px"></div>
+  </div>
+</div>
+
 <!-- ===== MODAL COMPARTIR ===== -->
 <div class="modal-bg" id="modal-compartir">
   <div class="modal">
@@ -672,8 +691,9 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=8; // se incrementa en cada versión nueva
-let usuarios={}, registros={}, abiertos={}, comunes={};
+const VERSION_APP=9; // se incrementa en cada versión nueva
+let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={};
+let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
 let tipoElegido=null;     // 'camion' | 'bolson'
@@ -718,7 +738,7 @@ function iniciar(){
       try{ firebase.database().setPersistenceEnabled(true); }catch(e){}
       db=firebase.database();
       // Mantener sincronizadas estas ramas aunque se corte el internet
-      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); }catch(e){}
+      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); db.ref('hectareas').keepSynced(true); }catch(e){}
       auth=firebase.auth();
       // Si ya hay sesión anónima guardada (de una entrada previa con señal), arranca aunque esté offline
       auth.onAuthStateChanged(u=>{ if(u){ firebaseOK=true; escucharConexion(); escucharDatos(); } });
@@ -761,6 +781,7 @@ function escucharDatos(){
   db.ref('registros').on('value',s=>{registros=s.val()||{}; renderTodo();});
   db.ref('abiertos').on('value',s=>{abiertos=s.val()||{}; renderCarga();});
   db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes(); actualizarContador();});
+  db.ref('hectareas').on('value',s=>{hectareas=s.val()||{}; if($('v-resumen').classList.contains('activa'))renderResumen();});
   // Control de versión: si esta copia es la más nueva, la registra; si hay una más nueva, avisa
   db.ref('versionApp').on('value',s=>{
     const enServidor=Number(s.val())||0;
@@ -1810,7 +1831,7 @@ function renderResumen(){
   const bolson=regs.filter(r=>r.tipo==='bolson').reduce((s,r)=>s+(Number(r.kg)||0),0);
   const nCam=regs.filter(r=>r.tipo==='camion').length, nBol=regs.filter(r=>r.tipo==='bolson').length;
 
-  if(!regs.length){cont.innerHTML='<div class="vacio"><span class="ico">📊</span>Sin datos en este período</div>';return;}
+  if(!regs.length){cont.innerHTML='<div class="vacio"><span class="ico">📊</span>Sin datos en este período</div>'+rindeHTML();return;}
 
   const grupo=(campo,titulo,clase)=>{
     const m={};
@@ -1848,7 +1869,132 @@ function renderResumen(){
     ${grupo('cultivo','🌱 Por cultivo','t2')}
     ${grupoPorTolva('campo','🏡 Por campo','t1')}
     ${grupoPorTolva('lote','📍 Por lote (campo · lote)','t3')}
-    ${grupo('fecha','📅 Por fecha','t4')}`;
+    ${grupo('fecha','📅 Por fecha','t4')}
+    ${rindeHTML()}`;
+}
+
+/* =================== RINDE (kg/ha) POR CAMPAÑA =================== */
+function aniosDisponibles(){
+  const s=new Set([String(new Date().getFullYear())]);
+  Object.values(registros).forEach(r=>{ if(r.fecha)s.add(r.fecha.slice(0,4)); });
+  Object.keys(hectareas).forEach(a=>s.add(a));
+  return [...s].sort().reverse();
+}
+function datosRinde(anio){
+  // kg por campo·lote de la campaña (año de la fecha de cosecha), sumando tolva por tolva
+  const kgLote={}; const cultivoLote={};
+  Object.values(registros).forEach(r=>{
+    if(!r.fecha||r.fecha.slice(0,4)!==anio)return;
+    desgloseLotes(r).forEach(d=>{
+      const k=d.campo+'|||'+d.lote;
+      kgLote[k]=(kgLote[k]||0)+d.kg;
+      if(r.cultivo)cultivoLote[k]=r.cultivo; // cultivo cosechado en ese lote esa campaña
+    });
+  });
+  // hectáreas cargadas de esa campaña
+  const haLote={};
+  Object.values(hectareas[anio]||{}).forEach(e=>{ if(e&&e.campo&&e.lote)haLote[e.campo+'|||'+e.lote]=Number(e.ha)||0; });
+  return {kgLote,cultivoLote,haLote};
+}
+function rindeHTML(){
+  const anios=aniosDisponibles();
+  const {kgLote,cultivoLote,haLote}=datosRinde(anioRinde);
+  const claves=Object.keys(kgLote);
+  const sel=`<select onchange="anioRinde=this.value;renderResumen()" style="width:auto;padding:7px 10px;font-weight:700">${anios.map(a=>`<option ${a===anioRinde?'selected':''}>${a}</option>`).join('')}</select>`;
+  let filasLote='', porCampo={}, porCultivo={}, sinHa=[];
+  claves.sort((a,b)=>kgLote[b]-kgLote[a]).forEach(k=>{
+    const [campo,lote]=k.split('|||');
+    const kgV=kgLote[k], ha=haLote[k];
+    if(ha>0){
+      const rin=Math.round(kgV/ha);
+      filasLote+=`<div class="barra-row"><div class="barra-top"><b>${esc(campo)} · ${esc(lote)}</b><span class="bk">${rin.toLocaleString('es-AR')} kg/ha</span></div>
+        <div style="font-size:12px;color:var(--gris)">${nkg(kgV)} kg en ${ha} ha${cultivoLote[k]?(' · '+esc(cultivoLote[k])):''}</div></div>`;
+      if(!porCampo[campo])porCampo[campo]={kg:0,ha:0}; porCampo[campo].kg+=kgV; porCampo[campo].ha+=ha;
+      const cu=cultivoLote[k]||'(sin cultivo)';
+      if(!porCultivo[cu])porCultivo[cu]={kg:0,ha:0}; porCultivo[cu].kg+=kgV; porCultivo[cu].ha+=ha;
+    }else{
+      sinHa.push(campo+' · '+lote);
+    }
+  });
+  const bloque=(titulo,obj)=>{
+    const arr=Object.entries(obj).sort((a,b)=>(b[1].kg/b[1].ha)-(a[1].kg/a[1].ha));
+    if(!arr.length)return '';
+    return `<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:14px 0 8px">${titulo}</h4>`+
+      arr.map(([k,v])=>`<div class="barra-row"><div class="barra-top"><b>${esc(k)}</b><span class="bk">${Math.round(v.kg/v.ha).toLocaleString('es-AR')} kg/ha</span></div>
+      <div style="font-size:12px;color:var(--gris)">${nkg(v.kg)} kg en ${Math.round(v.ha*10)/10} ha</div></div>`).join('');
+  };
+  return `<div class="grupo-card" style="border-top:3px solid var(--trigo)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <h3 style="margin:0">🌾 Rinde (kg/ha) — Campaña ${sel}</h3>
+      <button class="btn peq linea" onclick="abrirHa()">⚙️ Hectáreas</button>
+    </div>
+    ${filasLote?`<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:10px 0 8px">Por lote</h4>${filasLote}`:'<p class="sub">Todavía no hay lotes con hectáreas cargadas para esta campaña. Tocá ⚙️ Hectáreas para cargarlas.</p>'}
+    ${bloque('Por campo',porCampo)}
+    ${bloque('Por cultivo',porCultivo)}
+    ${sinHa.length?`<p class="sub" style="margin-top:10px">⚠️ Sin hectáreas cargadas (kilos sí registrados): ${sinHa.map(esc).join(', ')}</p>`:''}
+  </div>`;
+}
+
+/* ---- gestión de hectáreas (solo admin, vive en Resúmenes) ---- */
+function abrirHa(){
+  const s=$('ha-anio');
+  s.innerHTML=aniosDisponibles().map(a=>`<option ${a===anioRinde?'selected':''}>${a}</option>`).join('');
+  $('ha-campo').value=''; $('ha-lote').value=''; $('ha-num').value='';
+  renderListaHa(); abrir('modal-ha');
+}
+function autocHa(campo,input){
+  const cont=$('sug-ha-'+campo);
+  const v=norm(input.value);
+  let lista = campo==='lote' ? ($('ha-campo').value.trim()?lotesDelCampo($('ha-campo').value.trim()):valoresUnicos('lote')) : valoresUnicos('campo');
+  if(v)lista=lista.filter(x=>norm(x).includes(v));
+  lista=lista.slice(0,8);
+  if(!lista.length||!input.value){cont.style.display='none';return;}
+  cont.innerHTML=lista.map(x=>`<div onmousedown="$('ha-${campo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-ha-${campo}').style.display='none'">${esc(x)}</div>`).join('');
+  cont.style.display='block';
+}
+function renderListaHa(){
+  const anio=$('ha-anio').value;
+  const cont=$('ha-lista');
+  const entradas=Object.entries(hectareas[anio]||{}).sort((a,b)=>norm(a[1].campo+a[1].lote).localeCompare(norm(b[1].campo+b[1].lote)));
+  if(!entradas.length){cont.innerHTML='<p class="sub">Sin hectáreas cargadas para '+esc(anio)+'.</p>';return;}
+  const totalHa=entradas.reduce((s,[id,e])=>s+(Number(e.ha)||0),0);
+  cont.innerHTML='<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:4px 0 8px">Cargadas ('+entradas.length+' lotes · '+(Math.round(totalHa*10)/10)+' ha)</h4>'+
+    entradas.map(([id,e])=>`<div class="tolva-item"><div><div class="ti-kg">${e.ha} ha</div><div class="ti-meta">🏡 ${esc(e.campo)} · 📍 ${esc(e.lote)}</div></div>
+    <button onclick="borrarHa('${id}')" title="Borrar">🗑️</button></div>`).join('');
+}
+function agregarHa(){
+  const anio=$('ha-anio').value;
+  const campo=$('ha-campo').value.trim(), lote=$('ha-lote').value.trim(), ha=Number($('ha-num').value);
+  if(!campo)return toast('Poné el campo');
+  if(!lote)return toast('Poné el lote');
+  if(!ha||ha<=0)return toast('Poné las hectáreas');
+  // si ya existe ese campo+lote en el año, lo actualizamos
+  const exist=Object.entries(hectareas[anio]||{}).find(([id,e])=>norm(e.campo)===norm(campo)&&norm(e.lote)===norm(lote));
+  const id=exist?exist[0]:uid();
+  guardar('hectareas/'+anio+'/'+id,{campo,lote,ha},'Hectáreas guardadas');
+  $('ha-lote').value=''; $('ha-num').value='';
+  setTimeout(renderListaHa,300);
+}
+function borrarHa(id){
+  const anio=$('ha-anio').value;
+  borrar('hectareas/'+anio+'/'+id,'Borrado');
+  setTimeout(renderListaHa,300);
+}
+function copiarHaAnterior(){
+  const anio=$('ha-anio').value;
+  const prev=String(Number(anio)-1);
+  const origen=hectareas[prev]||{};
+  if(!Object.keys(origen).length)return toast('No hay hectáreas cargadas en '+prev);
+  pedirConfirm('Copiar hectáreas',`Se copian las hectáreas de ${prev} a ${anio} (las que ya existan en ${anio} no se tocan). ¿Continuar?`,()=>{
+    const updates={}; let n=0;
+    Object.values(origen).forEach(e=>{
+      const dup=Object.values(hectareas[anio]||{}).some(x=>norm(x.campo)===norm(e.campo)&&norm(x.lote)===norm(e.lote));
+      if(!dup){updates['hectareas/'+anio+'/'+uid()]={campo:e.campo,lote:e.lote,ha:e.ha};n++;}
+    });
+    if(!n)return toast('Ya estaba todo copiado');
+    actualizar(updates,n+' lotes copiados a '+anio);
+    setTimeout(renderListaHa,400);
+  },'Sí, copiar');
 }
 
 /* =================== USUARIOS =================== */
