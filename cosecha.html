@@ -672,7 +672,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=7; // se incrementa en cada versión nueva
+const VERSION_APP=8; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={};
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -1821,6 +1821,23 @@ function renderResumen(){
       <div class="barra-row"><div class="barra-top"><b>${esc(k)}</b><span class="bk">${kg(v)} · ${Math.round(v/total*100)}%</span></div>
       <div class="barra ${clase}"><span style="width:${Math.round(v/max*100)}%"></span></div></div>`).join('')}</div>`;
   };
+  // Campo y lote: sumados desde las tolvas (exacto con camiones multi-lote).
+  // El lote se muestra como "Campo · Lote" para no mezclar lotes con igual nombre de campos distintos.
+  const grupoPorTolva=(nivel,titulo,clase)=>{
+    const m={};
+    regs.forEach(r=>{
+      desgloseLotes(r).forEach(d=>{
+        const k = nivel==='lote' ? (d.campo+' · '+d.lote) : d.campo;
+        m[k]=(m[k]||0)+d.kg;
+      });
+    });
+    const arr=Object.entries(m).sort((a,b)=>b[1]-a[1]);
+    if(!arr.length)return '';
+    const max=arr[0][1]||1;
+    return `<div class="grupo-card"><h3>${titulo}</h3>${arr.map(([k,v])=>`
+      <div class="barra-row"><div class="barra-top"><b>${esc(k)}</b><span class="bk">${kg(v)} · ${Math.round(v/total*100)}%</span></div>
+      <div class="barra ${clase}"><span style="width:${Math.round(v/max*100)}%"></span></div></div>`).join('')}</div>`;
+  };
 
   cont.innerHTML=`
     <div class="total-grande"><div><div class="et">Total del período</div><div class="num">${kg(total)}</div></div><div style="font-size:34px">🌾</div></div>
@@ -1829,8 +1846,8 @@ function renderResumen(){
       <div class="kpi bolson"><div class="et">🛢️ Bolsón (${nBol})</div><div class="num">${kg(bolson)}</div></div>
     </div>
     ${grupo('cultivo','🌱 Por cultivo','t2')}
-    ${grupo('campo','🏡 Por campo','t1')}
-    ${grupo('lote','📍 Por lote','t3')}
+    ${grupoPorTolva('campo','🏡 Por campo','t1')}
+    ${grupoPorTolva('lote','📍 Por lote (campo · lote)','t3')}
     ${grupo('fecha','📅 Por fecha','t4')}`;
 }
 
