@@ -685,30 +685,36 @@
     </div>
     <h4 style="font-family:var(--display);font-size:15px;margin:14px 0 8px;border-bottom:1px solid var(--gris-cl);padding-bottom:4px">🌱 Orden de siembra</h4>
     <div class="fila2">
-      <div class="campo-form"><label>Superficie (has)</label><input id="fi-superficie" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 85"></div>
+      <div class="campo-form"><label>Superficie (has)</label><input id="fi-superficie" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 85" oninput="calcularTotalesFicha()"></div>
       <div class="campo-form"><label>Antecesor (cultivo)</label><input id="fi-antecesor" list="dl-antecesor" placeholder="Ej: Soja" autocomplete="off"></div>
     </div>
     <div class="campo-form"><label>Híbrido / Variedad</label><input id="fi-hibrido" list="dl-hibrido" placeholder="Ej: DK 72-10" autocomplete="off"></div>
     <div class="fila2">
-      <div class="campo-form"><label>MAP a la siembra (dosis)</label><input id="fi-mapdosis" placeholder="Ej: 80 kg/ha"></div>
-      <div class="campo-form"><label>Kilos totales MAP</label><input id="fi-mapkilos" type="number" inputmode="decimal" placeholder="Ej: 6800"></div>
+      <div class="campo-form"><label>Fertilizante</label><input id="fi-fert" list="dl-fert" placeholder="MAP / UREA / MICRO u otro" autocomplete="off"></div>
+      <div class="campo-form"><label>Fertilizante a la siembra (dosis)</label><input id="fi-mapdosis" placeholder="Ej: 80 kg/ha" oninput="calcularTotalesFicha()"></div>
     </div>
+    <div class="campo-form"><label>Kgs totales fertilizante <span style="font-weight:400;text-transform:none">(se calcula solo: has × dosis)</span></label><input id="fi-mapkilos" type="number" inputmode="decimal" placeholder="Se calcula al poner has y dosis"></div>
     <div class="fila2">
       <div class="campo-form"><label>Semillas / metro</label><input id="fi-semillas" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 3.5"></div>
       <div class="campo-form"><label>Distancia entre hileras (cm)</label><input id="fi-dist" type="number" inputmode="decimal" placeholder="Ej: 52"></div>
     </div>
     <div class="fila2">
       <div class="campo-form"><label>Profundidad de siembra (cm)</label><input id="fi-prof" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 5"></div>
-      <div class="campo-form"><label>Bolsas-kg de semilla/ha</label><input id="fi-bolsasha" placeholder="Ej: 0,8 bolsas"></div>
+      <div class="campo-form"><label>Bolsas-kg de semilla/ha</label><input id="fi-bolsasha" placeholder="Ej: 0,8" oninput="calcularTotalesFicha()"></div>
     </div>
+    <div class="campo-form"><label>Total bolsas-kg de semilla/lote <span style="font-weight:400;text-transform:none">(se calcula solo: has × bolsas-kg/ha)</span></label><input id="fi-totalbolsas" type="number" inputmode="decimal" step="0.1" placeholder="Se calcula al poner has y bolsas-kg/ha"></div>
+    <h4 style="font-family:var(--display);font-size:15px;margin:14px 0 8px;border-bottom:1px solid var(--gris-cl);padding-bottom:4px">💧 Condición hídrica de la campaña</h4>
     <div class="fila2">
-      <div class="campo-form"><label>Total bolsas</label><input id="fi-totalbolsas" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 68"></div>
-      <div class="campo-form"><label>Kg de semilla/lote</label><input id="fi-kgsemilla" type="number" inputmode="decimal" placeholder="Ej: 1360"></div>
+      <div class="campo-form"><label>Condición</label><select id="fi-hidrica"><option value="">—</option><option>Seco</option><option>Normal</option><option>Húmedo</option></select></div>
+      <div class="campo-form"><label>Lluvia total (mm)</label><input id="fi-mm" type="number" inputmode="decimal" placeholder="Ej: 650"></div>
     </div>
+    <h4 style="font-family:var(--display);font-size:15px;margin:14px 0 8px;border-bottom:1px solid var(--gris-cl);padding-bottom:4px">⚖️ Kilos cosechados (manual)</h4>
+    <div class="campo-form"><label>Kilos cosechados <span style="font-weight:400;text-transform:none">(solo si NO están en la app: campañas viejas o lotes que no cosechamos nosotros)</span></label><input id="fi-kgmanual" type="number" inputmode="decimal" placeholder="Vacío = usa los de Kilos cosechados"></div>
     <button class="btn" onclick="guardarFicha()">Guardar ficha</button>
     <button class="btn-cancelar" onclick="cerrar('modal-ficha')">Cancelar</button>
   </div>
 </div>
+<datalist id="dl-fert"></datalist>
 <datalist id="dl-campania"></datalist>
 <datalist id="dl-antecesor"></datalist>
 <datalist id="dl-hibrido"></datalist>
@@ -776,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=13; // se incrementa en cada versión nueva
+const VERSION_APP=16; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -2127,6 +2133,25 @@ function anioCosechaFicha(f){
   return esGranoFino(f.cultivo)?partes[0].trim():partes[1].trim();
 }
 // Kilos cosechados que corresponden a la ficha (mismo campo+lote+cultivo, año de cosecha según campaña)
+// Extrae el primer número de un texto ("80 kg/ha" → 80; "0,8" → 0.8)
+function numDe(txt){ const m=String(txt||'').replace(',','.').match(/[\d.]+/); return m?parseFloat(m[0]):0; }
+// Autocálculo: kgs fertilizante = has × dosis · total bolsas = has × bolsas/ha.
+// Solo escribe si el campo está vacío o fue calculado antes (no pisa valores manuales).
+function calcularTotalesFicha(){
+  const has=numDe($('fi-superficie').value);
+  const dosis=numDe($('fi-mapdosis').value);
+  const bxha=numDe($('fi-bolsasha').value);
+  const fert=$('fi-mapkilos'), bol=$('fi-totalbolsas');
+  if(has>0&&dosis>0&&(!fert.value||fert.dataset.auto==='1')){ fert.value=Math.round(has*dosis); fert.dataset.auto='1'; }
+  if(has>0&&bxha>0&&(!bol.value||bol.dataset.auto==='1')){ bol.value=Math.round(has*bxha*10)/10; bol.dataset.auto='1'; }
+}
+// Kilos de la ficha con respaldo manual: si no hay kilos automáticos, usa los cargados a mano
+function kilosFichaConManual(f){
+  const auto=kilosDeFicha(f);
+  if(auto.kg>0)return {kg:auto.kg,anio:auto.anio,manual:false};
+  const man=numDe(f.kgManual);
+  return {kg:man,anio:auto.anio,manual:man>0};
+}
 function kilosDeFicha(f){
   const anio=anioCosechaFicha(f);
   let kgs=0;
@@ -2189,12 +2214,18 @@ function abrirFicha(id){
   $('fi-hibrido').value=f.hibrido||'';
   $('fi-mapdosis').value=f.mapDosis||'';
   $('fi-mapkilos').value=f.mapKilos||'';
+  $('fi-fert').value=f.fertilizante||'';
+  $('fi-hidrica').value=f.hidrica||'';
+  $('fi-mm').value=f.mm||'';
+  $('fi-kgmanual').value=f.kgManual||'';
+  const ferts=new Set(['MAP','UREA','MICRO']);
+  Object.values(historial).forEach(x=>{ if(x.fertilizante)ferts.add(x.fertilizante); });
+  $('dl-fert').innerHTML=[...ferts].map(c=>`<option value="${esc(c)}">`).join('');
   $('fi-semillas').value=f.semillasMetro||'';
   $('fi-dist').value=f.distHileras||'';
   $('fi-prof').value=f.profundidad||'';
   $('fi-bolsasha').value=f.bolsasKgHa||'';
   $('fi-totalbolsas').value=f.totalBolsas||'';
-  $('fi-kgsemilla').value=f.kgSemillaLote||'';
   abrir('modal-ficha');
 }
 function guardarFicha(){
@@ -2213,12 +2244,16 @@ function guardarFicha(){
     hibrido:$('fi-hibrido').value.trim(),
     mapDosis:$('fi-mapdosis').value.trim(),
     mapKilos:$('fi-mapkilos').value.trim(),
+    fertilizante:$('fi-fert').value.trim(),
+    hidrica:$('fi-hidrica').value,
+    mm:$('fi-mm').value.trim(),
+    kgManual:$('fi-kgmanual').value.trim(),
     semillasMetro:$('fi-semillas').value.trim(),
     distHileras:$('fi-dist').value.trim(),
     profundidad:$('fi-prof').value.trim(),
     bolsasKgHa:$('fi-bolsasha').value.trim(),
     totalBolsas:$('fi-totalbolsas').value.trim(),
-    kgSemillaLote:$('fi-kgsemilla').value.trim(),
+    kgSemillaLote:prev.kgSemillaLote||'',
     labores:prev.labores||{},
     creado:prev.creado||Date.now()
   };
@@ -2233,9 +2268,10 @@ function borrarFicha(id){
 function agregarLabor(id){
   const fecha=$('lab-fecha-'+id).value;
   const labor=$('lab-nombre-'+id).value.trim();
+  const obs=$('lab-obs-'+id).value.trim();
   if(!fecha)return toast('Poné la fecha de la labor');
   if(!labor)return toast('Poné la labor');
-  guardar('historial/'+id+'/labores/'+uid(),{fecha,labor},'Labor agregada');
+  guardar('historial/'+id+'/labores/'+uid(),{fecha,labor,obs},'Labor agregada');
   setTimeout(renderHistorial,300);
 }
 function borrarLabor(id,lid){
@@ -2287,7 +2323,7 @@ function renderHistorial(){
   if(!fichas.length){cont.innerHTML='<div class="vacio"><span class="ico">📖</span>Sin fichas para esta vista. Creá una con "+ Nueva ficha" o limpiá los filtros.</div>';return;}
   const dato=(et,v)=>v?`<div style="font-size:12.5px"><span style="color:var(--gris)">${et}:</span> <b>${esc(String(v))}</b></div>`:'';
   cont.innerHTML=fichas.map(([id,f])=>{
-    const {kg:kgs,anio}=kilosDeFicha(f);
+    const {kg:kgs,anio,manual}=kilosFichaConManual(f);
     const has=Number(String(f.superficie).replace(',','.'))||0;
     const prom=(kgs>0&&has>0)?Math.round(kgs/has):null;
     const labores=Object.entries(f.labores||{}).sort((a,b)=>(a[1].fecha||'').localeCompare(b[1].fecha||''));
@@ -2299,7 +2335,7 @@ function renderHistorial(){
             <span class="reg-titulo">🏡 ${esc(f.campo)} · 📍 ${esc(f.lote)}</span>
           </div>
           <div class="reg-meta">🌱 ${esc(f.cultivo)}${f.hibrido?(' · '+esc(f.hibrido)):''}${has?(' · '+has+' has'):''}</div>
-          <div class="reg-meta">⚖️ ${kgs>0?(nkg(kgs)+' kg cosechados ('+anio+')'):'Sin kilos cosechados aún'}${prom?(' · 🌾 <b>'+prom.toLocaleString('es-AR')+' kg/ha</b>'):''}</div>
+          <div class="reg-meta">⚖️ ${kgs>0?(nkg(kgs)+' kg cosechados ('+(manual?'carga manual':anio)+')'):'Sin kilos cosechados aún'}${prom?(' · 🌾 <b>'+prom.toLocaleString('es-AR')+' kg/ha</b>'):''}${f.hidrica?(' · 💧 '+esc(f.hidrica)+(f.mm?(' ('+esc(f.mm)+' mm)'):'')):''}</div>
         </div>
         <div style="text-align:right">${prom?`<div class="reg-kg">${prom.toLocaleString('es-AR')} kg/ha</div>`:`<div class="reg-kg" style="color:var(--gris)">—</div>`}<div class="reg-flecha">▶</div></div>
       </div>
@@ -2309,20 +2345,25 @@ function renderHistorial(){
           ${dato('Superficie',f.superficie?f.superficie+' has':'')}
           ${dato('Antecesor',f.antecesor)}
           ${dato('Híbrido/Variedad',f.hibrido)}
-          ${dato('MAP dosis',f.mapDosis)}
-          ${dato('Kilos totales MAP',f.mapKilos)}
+          ${dato('Fertilizante',f.fertilizante)}
+          ${dato('Fert. dosis',f.mapDosis)}
+          ${dato('Kgs totales fert.',f.mapKilos)}
           ${dato('Semillas/metro',f.semillasMetro)}
           ${dato('Dist. hileras',f.distHileras?f.distHileras+' cm':'')}
           ${dato('Profundidad',f.profundidad?f.profundidad+' cm':'')}
           ${dato('Bolsas-kg semilla/ha',f.bolsasKgHa)}
-          ${dato('Total bolsas',f.totalBolsas)}
-          ${dato('Kg semilla/lote',f.kgSemillaLote)}
+          ${dato('Total bolsas-kg semilla/lote',f.totalBolsas)}
+          ${dato('Kg semilla/lote (dato previo)',f.kgSemillaLote)}
+          ${dato('Cond. hídrica',f.hidrica?(f.hidrica+(f.mm?(' · '+f.mm+' mm'):'')):'')}
         </div>
         <h4>🚜 Labores (${labores.length})</h4>
-        ${labores.length?labores.map(([lid,l])=>`<div class="tolva-item" style="border-left-color:var(--tierra)"><div><div class="ti-kg" style="font-size:14px">${esc(l.labor)}</div><div class="ti-meta">📅 ${fechaLinda(l.fecha)}</div></div><button onclick="borrarLabor('${id}','${lid}')" title="Borrar">🗑️</button></div>`).join(''):'<p class="sub">Sin labores cargadas.</p>'}
+        ${labores.length?labores.map(([lid,l])=>`<div class="tolva-item" style="border-left-color:var(--tierra)"><div><div class="ti-kg" style="font-size:14px">${esc(l.labor)}</div><div class="ti-meta">📅 ${fechaLinda(l.fecha)}${l.obs?(' · 📝 '+esc(l.obs)):''}</div></div><button onclick="borrarLabor('${id}','${lid}')" title="Borrar">🗑️</button></div>`).join(''):'<p class="sub">Sin labores cargadas.</p>'}
         <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
           <div class="campo-form" style="flex:1;min-width:130px;margin-bottom:0"><label>Fecha</label><input type="date" id="lab-fecha-${id}"></div>
           <div class="campo-form" style="flex:2;min-width:160px;margin-bottom:0"><label>Labor</label><input id="lab-nombre-${id}" list="dl-labor" placeholder="Ej: Fumigación" autocomplete="off"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
+          <div class="campo-form" style="flex:1;min-width:200px;margin-bottom:0"><label>Observación (opcional)</label><input id="lab-obs-${id}" placeholder="Ej: 2 lts glifosato + coadyuvante" autocomplete="off"></div>
           <button class="btn peq" onclick="agregarLabor('${id}')">+ Agregar</button>
         </div>
         <div class="reg-acc" style="margin-top:14px">
@@ -2351,10 +2392,10 @@ function construirPDFHistorial(fichas){
 
   let totKg=0, totHa=0;
   const datos=fichas.map(([id,f])=>{
-    const {kg:kgs,anio}=kilosDeFicha(f);
+    const {kg:kgs,anio,manual}=kilosFichaConManual(f);
     const has=Number(String(f.superficie).replace(',','.'))||0;
     totKg+=kgs; totHa+=has;
-    return {f,kgs,anio,has,prom:(kgs>0&&has>0)?Math.round(kgs/has):null};
+    return {f,kgs,anio,manual,has,prom:(kgs>0&&has>0)?Math.round(kgs/has):null};
   });
 
   // Encabezado
@@ -2367,7 +2408,7 @@ function construirPDFHistorial(fichas){
 
   // Tabla principal: una fila por ficha + filas de detalle (orden de siembra y labores)
   const body=[];
-  datos.forEach(({f,kgs,anio,has,prom})=>{
+  datos.forEach(({f,kgs,anio,manual,has,prom})=>{
     body.push([
       f.campania||'—', f.campo||'—', f.lote||'—', f.cultivo||'—',
       has?String(has):'—',
@@ -2378,21 +2419,23 @@ function construirPDFHistorial(fichas){
     const os=[];
     if(f.antecesor)os.push('Antecesor: '+f.antecesor);
     if(f.hibrido)os.push('Híbrido: '+f.hibrido);
-    if(f.mapDosis)os.push('MAP: '+f.mapDosis);
-    if(f.mapKilos)os.push('MAP total: '+f.mapKilos+' kg');
+    if(f.fertilizante)os.push('Fert: '+f.fertilizante+(f.mapDosis?(' '+f.mapDosis):''));
+    else if(f.mapDosis)os.push('Fert. dosis: '+f.mapDosis);
+    if(f.mapKilos)os.push('Fert. total: '+f.mapKilos+' kg');
     if(f.semillasMetro)os.push('Sem/m: '+f.semillasMetro);
     if(f.distHileras)os.push('Hileras: '+f.distHileras+' cm');
     if(f.profundidad)os.push('Prof: '+f.profundidad+' cm');
     if(f.bolsasKgHa)os.push('Bolsas-kg/ha: '+f.bolsasKgHa);
-    if(f.totalBolsas)os.push('Total bolsas: '+f.totalBolsas);
-    if(f.kgSemillaLote)os.push('Kg semilla/lote: '+f.kgSemillaLote);
+    if(f.totalBolsas)os.push('Total bolsas-kg semilla/lote: '+f.totalBolsas);
+    if(f.kgSemillaLote)os.push('Kg semilla/lote (previo): '+f.kgSemillaLote);
+    if(f.hidrica)os.push('Hídrica: '+f.hidrica+(f.mm?(' ('+f.mm+' mm)'):''));
     if(os.length)body.push([{content:'Siembra — '+os.join('  ·  '),colSpan:7,styles:{fillColor:[245,243,234],textColor:[80,80,80],fontSize:7}}]);
     // labores
     const labores=Object.values(f.labores||{}).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
     if(labores.length){
-      body.push([{content:'Labores — '+labores.map(l=>fechaLinda(l.fecha)+': '+l.labor).join('  ·  '),colSpan:7,styles:{fillColor:[252,239,220],textColor:[150,90,20],fontSize:7}}]);
+      body.push([{content:'Labores — '+labores.map(l=>fechaLinda(l.fecha)+': '+l.labor+(l.obs?(' ('+l.obs+')'):'')).join('  ·  '),colSpan:7,styles:{fillColor:[252,239,220],textColor:[150,90,20],fontSize:7}}]);
     }
-    if(kgs>0)body.push([{content:'Cosecha '+anio+': '+nkg(kgs)+' kg'+(prom?('  →  Promedio: '+prom.toLocaleString('es-AR')+' kg/ha'):''),colSpan:7,styles:{fillColor:[235,244,233],textColor:[47,93,52],fontSize:7,fontStyle:'bold'}}]);
+    if(kgs>0)body.push([{content:'Cosecha '+(manual?'(carga manual)':anio)+': '+nkg(kgs)+' kg'+(prom?('  →  Promedio: '+prom.toLocaleString('es-AR')+' kg/ha'):''),colSpan:7,styles:{fillColor:[235,244,233],textColor:[47,93,52],fontSize:7,fontStyle:'bold'}}]);
   });
 
   doc.autoTable({
