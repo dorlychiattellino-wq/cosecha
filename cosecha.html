@@ -514,6 +514,38 @@
       <div id="resumen-cont"></div>
     </section>
 
+    <!-- ====== VISTA HISTORIAL ====== -->
+    <section class="vista" id="v-historial">
+      <h2 class="sec">Historial por lote</h2>
+      <p class="sub">Órdenes de siembra, labores, kilos obtenidos y rinde de cada lote, por campaña.</p>
+      <details class="filtros">
+        <summary>🔍 Filtros</summary>
+        <div class="fila2">
+          <div class="campo-form"><label>Campaña</label><select id="h-f-campania"><option value="">Todas</option></select></div>
+          <div class="campo-form"><label>Cultivo</label><select id="h-f-cultivo"><option value="">Todos</option></select></div>
+        </div>
+        <div class="fila2">
+          <div class="campo-form"><label>Campo</label><select id="h-f-campo" onchange="actualizarFiltroLoteHist()"><option value="">Todos</option></select></div>
+          <div class="campo-form"><label>Lote</label><select id="h-f-lote"><option value="">Todos</option></select></div>
+        </div>
+        <div class="fila2">
+          <button class="btn peq linea" onclick="renderHistorial()">Aplicar</button>
+          <button class="btn peq gris" onclick="limpiarFiltrosHist()">Limpiar</button>
+        </div>
+      </details>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn peq" onclick="abrirFicha()">+ Nueva ficha</button>
+        <button class="btn peq linea" onclick="abrirClases()">🌾 Clasificar cultivos (fino/grueso)</button>
+      </div>
+      <div class="panel-pdf">
+        <div class="titulo-pdf">📄 Descargar reporte (según filtros)</div>
+        <div class="fila-pdf">
+          <button class="btn-pdf verde" onclick="generarPDFHistorial()"><span class="ic">📖</span> PDF historial</button>
+        </div>
+      </div>
+      <div id="hist-lista"></div>
+    </section>
+
     <!-- ====== VISTA USUARIOS ====== -->
     <section class="vista" id="v-usuarios">
       <h2 class="sec">Usuarios</h2>
@@ -629,6 +661,59 @@
   </div>
 </div>
 
+<!-- ===== MODAL CLASIFICAR CULTIVOS ===== -->
+<div class="modal-bg" id="modal-clase">
+  <div class="modal">
+    <div class="modal-head"><h3>🌾 Clasificar cultivos</h3><button class="modal-cerrar" onclick="cerrar('modal-clase')">×</button></div>
+    <p class="sub">Definí si cada cultivo es de grano <b>fino</b> (se cosecha el primer año de la campaña) o <b>grueso</b> (el segundo). Si no lo clasificás, la app lo deduce sola por el nombre.</p>
+    <div id="clase-lista"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL FICHA HISTORIAL ===== -->
+<div class="modal-bg" id="modal-ficha">
+  <div class="modal">
+    <div class="modal-head"><h3 id="fi-titulo">Nueva ficha</h3><button class="modal-cerrar" onclick="cerrar('modal-ficha')">×</button></div>
+    <input type="hidden" id="fi-id">
+    <div class="fila2">
+      <div class="campo-form"><label>Campaña</label><input id="fi-campania" list="dl-campania" placeholder="Ej: 2025/2026" autocomplete="off"></div>
+      <div class="campo-form autobox"><label>🌱 Cultivo</label><input id="fi-cultivo" placeholder="Ej: Maíz Tardío" autocomplete="off" oninput="autocFi('cultivo',this)"><div class="sugerencias" id="sug-fi-cultivo"></div></div>
+    </div>
+    <div class="fila2">
+      <div class="campo-form autobox"><label>🏡 Campo</label><input id="fi-campo" placeholder="Campo" autocomplete="off" oninput="autocFi('campo',this)"><div class="sugerencias" id="sug-fi-campo"></div></div>
+      <div class="campo-form autobox"><label>📍 Lote</label><input id="fi-lote" placeholder="Lote" autocomplete="off" oninput="autocFi('lote',this)"><div class="sugerencias" id="sug-fi-lote"></div></div>
+    </div>
+    <h4 style="font-family:var(--display);font-size:15px;margin:14px 0 8px;border-bottom:1px solid var(--gris-cl);padding-bottom:4px">🌱 Orden de siembra</h4>
+    <div class="fila2">
+      <div class="campo-form"><label>Superficie (has)</label><input id="fi-superficie" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 85"></div>
+      <div class="campo-form"><label>Antecesor (cultivo)</label><input id="fi-antecesor" list="dl-antecesor" placeholder="Ej: Soja" autocomplete="off"></div>
+    </div>
+    <div class="campo-form"><label>Híbrido / Variedad</label><input id="fi-hibrido" list="dl-hibrido" placeholder="Ej: DK 72-10" autocomplete="off"></div>
+    <div class="fila2">
+      <div class="campo-form"><label>MAP a la siembra (dosis)</label><input id="fi-mapdosis" placeholder="Ej: 80 kg/ha"></div>
+      <div class="campo-form"><label>Kilos totales MAP</label><input id="fi-mapkilos" type="number" inputmode="decimal" placeholder="Ej: 6800"></div>
+    </div>
+    <div class="fila2">
+      <div class="campo-form"><label>Semillas / metro</label><input id="fi-semillas" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 3.5"></div>
+      <div class="campo-form"><label>Distancia entre hileras (cm)</label><input id="fi-dist" type="number" inputmode="decimal" placeholder="Ej: 52"></div>
+    </div>
+    <div class="fila2">
+      <div class="campo-form"><label>Profundidad de siembra (cm)</label><input id="fi-prof" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 5"></div>
+      <div class="campo-form"><label>Bolsas-kg de semilla/ha</label><input id="fi-bolsasha" placeholder="Ej: 0,8 bolsas"></div>
+    </div>
+    <div class="fila2">
+      <div class="campo-form"><label>Total bolsas</label><input id="fi-totalbolsas" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 68"></div>
+      <div class="campo-form"><label>Kg de semilla/lote</label><input id="fi-kgsemilla" type="number" inputmode="decimal" placeholder="Ej: 1360"></div>
+    </div>
+    <button class="btn" onclick="guardarFicha()">Guardar ficha</button>
+    <button class="btn-cancelar" onclick="cerrar('modal-ficha')">Cancelar</button>
+  </div>
+</div>
+<datalist id="dl-campania"></datalist>
+<datalist id="dl-antecesor"></datalist>
+<datalist id="dl-hibrido"></datalist>
+<datalist id="dl-labor"></datalist>
+
 <!-- ===== MODAL HECTÁREAS ===== -->
 <div class="modal-bg" id="modal-ha">
   <div class="modal">
@@ -691,8 +776,8 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=9; // se incrementa en cada versión nueva
-let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={};
+const VERSION_APP=12; // se incrementa en cada versión nueva
+let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
 let loginModo='invitado';
@@ -738,7 +823,7 @@ function iniciar(){
       try{ firebase.database().setPersistenceEnabled(true); }catch(e){}
       db=firebase.database();
       // Mantener sincronizadas estas ramas aunque se corte el internet
-      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); db.ref('hectareas').keepSynced(true); }catch(e){}
+      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); db.ref('hectareas').keepSynced(true); db.ref('historial').keepSynced(true); db.ref('cultivosClase').keepSynced(true); }catch(e){}
       auth=firebase.auth();
       // Si ya hay sesión anónima guardada (de una entrada previa con señal), arranca aunque esté offline
       auth.onAuthStateChanged(u=>{ if(u){ firebaseOK=true; escucharConexion(); escucharDatos(); } });
@@ -782,6 +867,8 @@ function escucharDatos(){
   db.ref('abiertos').on('value',s=>{abiertos=s.val()||{}; renderCarga();});
   db.ref('comunes').on('value',s=>{comunes=s.val()||{}; aplicarComunes(); actualizarContador();});
   db.ref('hectareas').on('value',s=>{hectareas=s.val()||{}; if($('v-resumen').classList.contains('activa'))renderResumen();});
+  db.ref('historial').on('value',s=>{historial=s.val()||{}; if($('v-historial')&&$('v-historial').classList.contains('activa'))renderHistorial();});
+  db.ref('cultivosClase').on('value',s=>{cultivosClase=s.val()||{}; if($('v-historial')&&$('v-historial').classList.contains('activa'))renderHistorial();});
   // Control de versión: si esta copia es la más nueva, la registra; si hay una más nueva, avisa
   db.ref('versionApp').on('value',s=>{
     const enServidor=Number(s.val())||0;
@@ -928,6 +1015,7 @@ function construirNav(){
   if(esAdmin){
     items.push({v:'cosechado',txt:'⚖️ Kilos cosechados'});
     items.push({v:'resumen',txt:'📊 Resúmenes'});
+    items.push({v:'historial',txt:'📖 Historial'});
     items.push({v:'usuarios',txt:'👥 Usuarios'});
   }
   nav.innerHTML=items.map((it,i)=>`<button class="${i===0?'activo':''}" data-v="${it.v}" onclick="irVista('${it.v}',this)">${it.txt}</button>`).join('');
@@ -940,6 +1028,7 @@ function irVista(v,btn){
   else{const b=document.querySelector('nav.principal button[data-v="'+v+'"]');if(b)b.classList.add('activo');}
   if(v==='cosechado')renderCosechado();
   if(v==='resumen')renderResumen();
+  if(v==='historial')renderHistorial();
   if(v==='usuarios')renderUsuarios();
 }
 
@@ -1995,6 +2084,341 @@ function copiarHaAnterior(){
     actualizar(updates,n+' lotes copiados a '+anio);
     setTimeout(renderListaHa,400);
   },'Sí, copiar');
+}
+
+/* =================== HISTORIAL POR LOTE (campaña, orden de siembra, labores, kilos, rinde) =================== */
+const LABORES_BASE=['Disco rr1','Disco rr2','Siembra s/fert.','Siembra c/fert.','Fumigación','Fertilización','Cosecha'];
+// normalizador sin acentos para comparar campo/lote/cultivo con lo cargado en Carga
+function normx(s){return norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+function esGranoFino(cultivo){
+  const c=normx(cultivo);
+  // 1º: clasificación manual del admin, si existe
+  const manual=Object.values(cultivosClase).find(e=>e&&normx(e.nombre)===c);
+  if(manual)return manual.clase==='fino';
+  // 2º: deducción automática por nombre
+  return ['trigo','cebada','avena','centeno'].some(x=>c.includes(x));
+}
+function abrirClases(){ renderClases(); abrir('modal-clase'); }
+function renderClases(){
+  const cultivos=valoresHist('cultivo');
+  const cont=$('clase-lista');
+  if(!cultivos.length){cont.innerHTML='<p class="sub">Todavía no hay cultivos cargados.</p>';return;}
+  cont.innerHTML=cultivos.map(cu=>{
+    const fino=esGranoFino(cu);
+    const manual=Object.values(cultivosClase).some(e=>e&&normx(e.nombre)===normx(cu));
+    const cuArg=esc(cu).replace(/'/g,"\\'");
+    return `<div class="tolva-item"><div><div class="ti-kg" style="font-size:14px">${esc(cu)}</div><div class="ti-meta">${fino?'Grano fino (cosecha 1º año)':'Grano grueso (cosecha 2º año)'} · ${manual?'clasificado por vos':'deducción automática'}</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn peq ${fino?'':'linea'}" onclick="setClase('${cuArg}','fino')">Fino</button>
+        <button class="btn peq ${fino?'linea':'sec'}" onclick="setClase('${cuArg}','grueso')">Grueso</button>
+      </div></div>`;
+  }).join('');
+}
+function setClase(nombre,clase){
+  const exist=Object.entries(cultivosClase).find(([id,e])=>e&&normx(e.nombre)===normx(nombre));
+  const id=exist?exist[0]:uid();
+  guardar('cultivosClase/'+id,{nombre,clase},nombre+' → grano '+clase);
+  setTimeout(()=>{renderClases();renderHistorial();},350);
+}
+// Año de cosecha de una ficha: campaña "2025/2026" → finos cosechan 2025, gruesos 2026
+function anioCosechaFicha(f){
+  const partes=String(f.campania||'').split('/');
+  if(partes.length<2)return partes[0]||'';
+  return esGranoFino(f.cultivo)?partes[0].trim():partes[1].trim();
+}
+// Kilos cosechados que corresponden a la ficha (mismo campo+lote+cultivo, año de cosecha según campaña)
+function kilosDeFicha(f){
+  const anio=anioCosechaFicha(f);
+  let kgs=0;
+  Object.values(registros).forEach(r=>{
+    if(!r.fecha||r.fecha.slice(0,4)!==anio)return;
+    if(normx(r.cultivo)!==normx(f.cultivo))return;
+    desgloseLotes(r).forEach(d=>{
+      if(normx(d.campo)===normx(f.campo)&&normx(d.lote)===normx(f.lote))kgs+=d.kg;
+    });
+  });
+  return {kg:kgs,anio};
+}
+function valoresHist(campoNombre){
+  const set=new Set(valoresUnicos(campoNombre));
+  Object.values(historial).forEach(f=>{ if(f[campoNombre])set.add(f[campoNombre]); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function lotesHist(nombreCampo){
+  const set=new Set(lotesDelCampo(nombreCampo));
+  Object.values(historial).forEach(f=>{ if(normx(f.campo)===normx(nombreCampo)&&f.lote)set.add(f.lote); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function autocFi(tipo,input){
+  const cont=$('sug-fi-'+tipo);
+  const v=norm(input.value);
+  let lista = tipo==='lote' ? ($('fi-campo').value.trim()?lotesHist($('fi-campo').value.trim()):valoresHist('lote')) : valoresHist(tipo);
+  if(v)lista=lista.filter(x=>norm(x).includes(v));
+  lista=lista.slice(0,8);
+  if(!lista.length||!input.value){cont.style.display='none';return;}
+  cont.innerHTML=lista.map(x=>`<div onmousedown="$('fi-${tipo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-fi-${tipo}').style.display='none'">${esc(x)}</div>`).join('');
+  cont.style.display='block';
+}
+function campaniasSugeridas(){
+  const set=new Set();
+  Object.values(historial).forEach(f=>{ if(f.campania)set.add(f.campania); });
+  const y=new Date().getFullYear();
+  set.add((y-1)+'/'+y); set.add(y+'/'+(y+1));
+  return [...set].sort().reverse();
+}
+function llenarDatalists(){
+  $('dl-campania').innerHTML=campaniasSugeridas().map(c=>`<option value="${esc(c)}">`).join('');
+  $('dl-antecesor').innerHTML=valoresHist('cultivo').concat([...new Set(Object.values(historial).map(f=>f.antecesor).filter(Boolean))]).filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option value="${esc(c)}">`).join('');
+  const hibridos=[...new Set(Object.values(historial).map(f=>f.hibrido).filter(Boolean))].sort();
+  $('dl-hibrido').innerHTML=hibridos.map(c=>`<option value="${esc(c)}">`).join('');
+  const laboresUsadas=new Set(LABORES_BASE);
+  Object.values(historial).forEach(f=>Object.values(f.labores||{}).forEach(l=>{ if(l.labor)laboresUsadas.add(l.labor); }));
+  $('dl-labor').innerHTML=[...laboresUsadas].map(c=>`<option value="${esc(c)}">`).join('');
+}
+function abrirFicha(id){
+  llenarDatalists();
+  $('fi-id').value=id||'';
+  $('fi-titulo').textContent=id?'Editar ficha':'Nueva ficha';
+  const f=id?(historial[id]||{}):{};
+  $('fi-campania').value=f.campania||'';
+  $('fi-cultivo').value=f.cultivo||'';
+  $('fi-campo').value=f.campo||'';
+  $('fi-lote').value=f.lote||'';
+  $('fi-superficie').value=f.superficie||'';
+  $('fi-antecesor').value=f.antecesor||'';
+  $('fi-hibrido').value=f.hibrido||'';
+  $('fi-mapdosis').value=f.mapDosis||'';
+  $('fi-mapkilos').value=f.mapKilos||'';
+  $('fi-semillas').value=f.semillasMetro||'';
+  $('fi-dist').value=f.distHileras||'';
+  $('fi-prof').value=f.profundidad||'';
+  $('fi-bolsasha').value=f.bolsasKgHa||'';
+  $('fi-totalbolsas').value=f.totalBolsas||'';
+  $('fi-kgsemilla').value=f.kgSemillaLote||'';
+  abrir('modal-ficha');
+}
+function guardarFicha(){
+  const campania=$('fi-campania').value.trim();
+  const campo=$('fi-campo').value.trim(), lote=$('fi-lote').value.trim(), cultivo=$('fi-cultivo').value.trim();
+  if(!/^\d{4}\/\d{4}$/.test(campania))return toast('Campaña con formato 2025/2026');
+  if(!campo)return toast('Poné el campo');
+  if(!lote)return toast('Poné el lote');
+  if(!cultivo)return toast('Poné el cultivo');
+  const id=$('fi-id').value||uid();
+  const prev=historial[id]||{};
+  const f={
+    campania,campo,lote,cultivo,
+    superficie:$('fi-superficie').value.trim(),
+    antecesor:$('fi-antecesor').value.trim(),
+    hibrido:$('fi-hibrido').value.trim(),
+    mapDosis:$('fi-mapdosis').value.trim(),
+    mapKilos:$('fi-mapkilos').value.trim(),
+    semillasMetro:$('fi-semillas').value.trim(),
+    distHileras:$('fi-dist').value.trim(),
+    profundidad:$('fi-prof').value.trim(),
+    bolsasKgHa:$('fi-bolsasha').value.trim(),
+    totalBolsas:$('fi-totalbolsas').value.trim(),
+    kgSemillaLote:$('fi-kgsemilla').value.trim(),
+    labores:prev.labores||{},
+    creado:prev.creado||Date.now()
+  };
+  guardar('historial/'+id,f,'Ficha guardada');
+  cerrar('modal-ficha');
+  setTimeout(renderHistorial,300);
+}
+function borrarFicha(id){
+  const f=historial[id]; if(!f)return;
+  pedirConfirm('Borrar ficha',`¿Borrar la ficha de ${f.campo} · ${f.lote} (${f.campania})? Se pierden también sus labores. No se puede deshacer.`,()=>{ borrar('historial/'+id,'Ficha borrada'); setTimeout(renderHistorial,300); },'Sí, borrar');
+}
+function agregarLabor(id){
+  const fecha=$('lab-fecha-'+id).value;
+  const labor=$('lab-nombre-'+id).value.trim();
+  if(!fecha)return toast('Poné la fecha de la labor');
+  if(!labor)return toast('Poné la labor');
+  guardar('historial/'+id+'/labores/'+uid(),{fecha,labor},'Labor agregada');
+  setTimeout(renderHistorial,300);
+}
+function borrarLabor(id,lid){
+  pedirConfirm('Borrar labor','¿Borrar esta labor?',()=>{ borrar('historial/'+id+'/labores/'+lid,'Labor borrada'); setTimeout(renderHistorial,300); },'Sí, borrar');
+}
+function lotesFichasDeCampo(campo){
+  const set=new Set();
+  Object.values(historial).forEach(f=>{ if((!campo||normx(f.campo)===normx(campo))&&f.lote)set.add(f.lote); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function actualizarFiltroLoteHist(){
+  const campo=$('h-f-campo').value;
+  const lotes=lotesFichasDeCampo(campo);
+  const actual=$('h-f-lote').value;
+  $('h-f-lote').dataset.todos='Todos';
+  llenarSelect('h-f-lote',lotes, lotes.includes(actual)?actual:'');
+}
+function limpiarFiltrosHist(){
+  ['h-f-campania','h-f-campo','h-f-lote','h-f-cultivo'].forEach(i=>$(i).value='');
+  renderHistorial();
+}
+function fichasFiltradas(){
+  const fCam=$('h-f-campania').value, fCa=$('h-f-campo').value, fLo=$('h-f-lote').value, fCu=$('h-f-cultivo').value;
+  return Object.entries(historial)
+    .filter(([id,f])=>{
+      if(fCam&&f.campania!==fCam)return false;
+      if(fCa&&normx(f.campo)!==normx(fCa))return false;
+      if(fLo&&normx(f.lote)!==normx(fLo))return false;
+      if(fCu&&normx(f.cultivo)!==normx(fCu))return false;
+      return true;
+    })
+    .sort((a,b)=>{
+      const c=(b[1].campania||'').localeCompare(a[1].campania||''); if(c)return c;
+      const ca=norm(a[1].campo).localeCompare(norm(b[1].campo)); if(ca)return ca;
+      return norm(a[1].lote).localeCompare(norm(b[1].lote));
+    });
+}
+function renderHistorial(){
+  if(!sesion||sesion.rol!=='admin')return;
+  llenarDatalists();
+  // llenar selects de filtros conservando la selección
+  $('h-f-campania').dataset.todos='Todas'; $('h-f-campo').dataset.todos='Todos'; $('h-f-cultivo').dataset.todos='Todos';
+  llenarSelect('h-f-campania',[...new Set(Object.values(historial).map(f=>f.campania).filter(Boolean))].sort().reverse());
+  llenarSelect('h-f-campo',[...new Set(Object.values(historial).map(f=>f.campo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
+  llenarSelect('h-f-cultivo',[...new Set(Object.values(historial).map(f=>f.cultivo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
+  actualizarFiltroLoteHist();
+  const fichas=fichasFiltradas();
+  const cont=$('hist-lista');
+  if(!fichas.length){cont.innerHTML='<div class="vacio"><span class="ico">📖</span>Sin fichas para esta vista. Creá una con "+ Nueva ficha" o limpiá los filtros.</div>';return;}
+  const dato=(et,v)=>v?`<div style="font-size:12.5px"><span style="color:var(--gris)">${et}:</span> <b>${esc(String(v))}</b></div>`:'';
+  cont.innerHTML=fichas.map(([id,f])=>{
+    const {kg:kgs,anio}=kilosDeFicha(f);
+    const has=Number(String(f.superficie).replace(',','.'))||0;
+    const prom=(kgs>0&&has>0)?Math.round(kgs/has):null;
+    const labores=Object.entries(f.labores||{}).sort((a,b)=>(a[1].fecha||'').localeCompare(b[1].fecha||''));
+    return `<div class="registro" style="border-left-color:var(--trigo)">
+      <div class="reg-head" onclick="this.parentElement.classList.toggle('abierto')">
+        <div class="reg-info">
+          <div class="reg-top">
+            <span class="etiqueta" style="background:var(--trigo);color:var(--campo-osc)">${esc(f.campania)}</span>
+            <span class="reg-titulo">🏡 ${esc(f.campo)} · 📍 ${esc(f.lote)}</span>
+          </div>
+          <div class="reg-meta">🌱 ${esc(f.cultivo)}${f.hibrido?(' · '+esc(f.hibrido)):''}${has?(' · '+has+' has'):''}</div>
+          <div class="reg-meta">⚖️ ${kgs>0?(nkg(kgs)+' kg cosechados ('+anio+')'):'Sin kilos cosechados aún'}${prom?(' · 🌾 <b>'+prom.toLocaleString('es-AR')+' kg/ha</b>'):''}</div>
+        </div>
+        <div style="text-align:right">${prom?`<div class="reg-kg">${prom.toLocaleString('es-AR')} kg/ha</div>`:`<div class="reg-kg" style="color:var(--gris)">—</div>`}<div class="reg-flecha">▶</div></div>
+      </div>
+      <div class="reg-det">
+        <h4>🌱 Orden de siembra</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-bottom:6px">
+          ${dato('Superficie',f.superficie?f.superficie+' has':'')}
+          ${dato('Antecesor',f.antecesor)}
+          ${dato('Híbrido/Variedad',f.hibrido)}
+          ${dato('MAP dosis',f.mapDosis)}
+          ${dato('Kilos totales MAP',f.mapKilos)}
+          ${dato('Semillas/metro',f.semillasMetro)}
+          ${dato('Dist. hileras',f.distHileras?f.distHileras+' cm':'')}
+          ${dato('Profundidad',f.profundidad?f.profundidad+' cm':'')}
+          ${dato('Bolsas-kg semilla/ha',f.bolsasKgHa)}
+          ${dato('Total bolsas',f.totalBolsas)}
+          ${dato('Kg semilla/lote',f.kgSemillaLote)}
+        </div>
+        <h4>🚜 Labores (${labores.length})</h4>
+        ${labores.length?labores.map(([lid,l])=>`<div class="tolva-item" style="border-left-color:var(--tierra)"><div><div class="ti-kg" style="font-size:14px">${esc(l.labor)}</div><div class="ti-meta">📅 ${fechaLinda(l.fecha)}</div></div><button onclick="borrarLabor('${id}','${lid}')" title="Borrar">🗑️</button></div>`).join(''):'<p class="sub">Sin labores cargadas.</p>'}
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
+          <div class="campo-form" style="flex:1;min-width:130px;margin-bottom:0"><label>Fecha</label><input type="date" id="lab-fecha-${id}"></div>
+          <div class="campo-form" style="flex:2;min-width:160px;margin-bottom:0"><label>Labor</label><input id="lab-nombre-${id}" list="dl-labor" placeholder="Ej: Fumigación" autocomplete="off"></div>
+          <button class="btn peq" onclick="agregarLabor('${id}')">+ Agregar</button>
+        </div>
+        <div class="reg-acc" style="margin-top:14px">
+          <button class="btn peq linea" onclick="abrirFicha('${id}')">✏️ Editar ficha</button>
+          <button class="btn peq rojo" onclick="borrarFicha('${id}')">🗑️ Borrar ficha</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---- PDF del historial (según filtros) ---- */
+function generarPDFHistorial(){
+  if(sesion.rol!=='admin')return;
+  const fichas=fichasFiltradas();
+  if(!fichas.length)return toast('No hay fichas para el PDF (revisá los filtros)');
+  toast('Generando PDF…');
+  cargarJsPDF(()=>construirPDFHistorial(fichas));
+}
+function construirPDFHistorial(fichas){
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth();
+  const fCam=$('h-f-campania').value, fCa=$('h-f-campo').value, fLo=$('h-f-lote').value, fCu=$('h-f-cultivo').value;
+  const filtros=[fCam&&('Campaña '+fCam),fCa&&('Campo '+fCa),fLo&&('Lote '+fLo),fCu&&('Cultivo '+fCu)].filter(Boolean).join(' · ');
+
+  let totKg=0, totHa=0;
+  const datos=fichas.map(([id,f])=>{
+    const {kg:kgs,anio}=kilosDeFicha(f);
+    const has=Number(String(f.superficie).replace(',','.'))||0;
+    totKg+=kgs; totHa+=has;
+    return {f,kgs,anio,has,prom:(kgs>0&&has>0)?Math.round(kgs/has):null};
+  });
+
+  // Encabezado
+  doc.setFillColor(26,46,26); doc.rect(0,0,W,70,'F');
+  doc.setTextColor(217,180,74); doc.setFont('helvetica','bold'); doc.setFontSize(20);
+  doc.text('Cosecha — Historial por lote',40,32);
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text((filtros?('FILTRO: '+filtros):'Todas las fichas')+'   ·   Fichas: '+fichas.length,40,48);
+  doc.text('Generado: '+fechaLinda(hoy())+' '+ahoraHora()+'   ·   Por: '+sesion.nombre,40,61);
+
+  // Tabla principal: una fila por ficha + filas de detalle (orden de siembra y labores)
+  const body=[];
+  datos.forEach(({f,kgs,anio,has,prom})=>{
+    body.push([
+      f.campania||'—', f.campo||'—', f.lote||'—', f.cultivo||'—',
+      has?String(has):'—',
+      kgs>0?nkg(kgs):'—',
+      prom?prom.toLocaleString('es-AR'):'—'
+    ]);
+    // orden de siembra en una fila de detalle
+    const os=[];
+    if(f.antecesor)os.push('Antecesor: '+f.antecesor);
+    if(f.hibrido)os.push('Híbrido: '+f.hibrido);
+    if(f.mapDosis)os.push('MAP: '+f.mapDosis);
+    if(f.mapKilos)os.push('MAP total: '+f.mapKilos+' kg');
+    if(f.semillasMetro)os.push('Sem/m: '+f.semillasMetro);
+    if(f.distHileras)os.push('Hileras: '+f.distHileras+' cm');
+    if(f.profundidad)os.push('Prof: '+f.profundidad+' cm');
+    if(f.bolsasKgHa)os.push('Bolsas-kg/ha: '+f.bolsasKgHa);
+    if(f.totalBolsas)os.push('Total bolsas: '+f.totalBolsas);
+    if(f.kgSemillaLote)os.push('Kg semilla/lote: '+f.kgSemillaLote);
+    if(os.length)body.push([{content:'Siembra — '+os.join('  ·  '),colSpan:7,styles:{fillColor:[245,243,234],textColor:[80,80,80],fontSize:7}}]);
+    // labores
+    const labores=Object.values(f.labores||{}).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+    if(labores.length){
+      body.push([{content:'Labores — '+labores.map(l=>fechaLinda(l.fecha)+': '+l.labor).join('  ·  '),colSpan:7,styles:{fillColor:[252,239,220],textColor:[150,90,20],fontSize:7}}]);
+    }
+    if(kgs>0)body.push([{content:'Cosecha '+anio+': '+nkg(kgs)+' kg'+(prom?('  →  Promedio: '+prom.toLocaleString('es-AR')+' kg/ha'):''),colSpan:7,styles:{fillColor:[235,244,233],textColor:[47,93,52],fontSize:7,fontStyle:'bold'}}]);
+  });
+
+  doc.autoTable({
+    startY:82,
+    head:[['Campaña','Campo','Lote','Cultivo','Has','Kg cosechados','Kg/ha']],
+    body,
+    theme:'grid',
+    headStyles:{fillColor:[47,93,52],textColor:[255,255,255],fontSize:8,fontStyle:'bold'},
+    bodyStyles:{fontSize:8,textColor:[31,38,28]},
+    columnStyles:{4:{halign:'right'},5:{halign:'right',fontStyle:'bold'},6:{halign:'right',fontStyle:'bold'}},
+    margin:{left:40,right:40}
+  });
+
+  let y=doc.lastAutoTable.finalY+16;
+  if(y>doc.internal.pageSize.getHeight()-80){ doc.addPage(); y=50; }
+  doc.setFillColor(26,46,26); doc.roundedRect(40,y,W-80,26,4,4,'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('TOTAL: '+nkg(totKg)+' kg en '+(Math.round(totHa*10)/10)+' has',52,y+17);
+  if(totKg>0&&totHa>0)doc.text('Promedio: '+Math.round(totKg/totHa).toLocaleString('es-AR')+' kg/ha',W-52,y+17,{align:'right'});
+
+  const yFin=doc.internal.pageSize.getHeight()-24;
+  doc.setTextColor(150,150,150); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text('Generado por la app Cosecha · '+fechaLinda(hoy())+' '+ahoraHora(),W/2,yFin,{align:'center'});
+
+  const stamp=hoy().replace(/-/g,'')+'_'+ahoraHora().replace(':','');
+  compartirODescargarPDF(doc,'cosecha_historial_'+stamp+'.pdf');
 }
 
 /* =================== USUARIOS =================== */
