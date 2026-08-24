@@ -378,7 +378,7 @@
         </div>
         <div class="fila2">
           <div class="campo-form autobox"><label>🏡 Campo</label><input id="c-campo" placeholder="Ej: La Elisa" autocomplete="off" oninput="autoc('campo',this);guardarComun('campo',this.value)"><div class="sugerencias" id="sug-campo"></div></div>
-          <div class="campo-form autobox"><label>📍 Lote</label><input id="c-lote" placeholder="Ej: Lote 4" autocomplete="off" oninput="autoc('lote',this);guardarComun('lote',this.value)"><div class="sugerencias" id="sug-lote"></div></div>
+          <div class="campo-form autobox"><label>📍 Lote</label><input id="c-lote" placeholder="Ej: Lote 4" autocomplete="off" oninput="autoc('lote',this);guardarComun('lote',this.value)" onfocus="autoc('lote',this)"><div class="sugerencias" id="sug-lote"></div></div>
         </div>
         <p class="sub" style="margin:2px 0 0;font-size:12px">🔗 Estos datos se comparten con todos en tiempo real.</p>
       </div>
@@ -655,7 +655,7 @@
     <div class="modal-head"><h3>Cambiar lote/campo</h3><button class="modal-cerrar" onclick="cerrar('modal-cambio-lote')">×</button></div>
     <p class="sub" id="cambio-info">El camión sigue siendo el mismo. Las tolvas que ya cargaste quedan con su lote; las nuevas se cargan en el lote que elijas.</p>
     <div class="campo-form autobox"><label>🏡 Nuevo campo</label><input id="cambio-campo" placeholder="Campo" autocomplete="off" oninput="autocCambio('campo',this)"><div class="sugerencias" id="sug-cambio-campo"></div></div>
-    <div class="campo-form autobox"><label>📍 Nuevo lote</label><input id="cambio-lote" placeholder="Lote" autocomplete="off" oninput="autocCambio('lote',this)"><div class="sugerencias" id="sug-cambio-lote"></div></div>
+    <div class="campo-form autobox"><label>📍 Nuevo lote</label><input id="cambio-lote" placeholder="Lote" autocomplete="off" oninput="autocCambio('lote',this)" onfocus="autocCambio('lote',this)"><div class="sugerencias" id="sug-cambio-lote"></div></div>
     <button class="btn" onclick="guardarCambioLote()">Cambiar y seguir cargando</button>
     <button class="btn-cancelar" onclick="cerrar('modal-cambio-lote')">Cancelar</button>
   </div>
@@ -681,7 +681,7 @@
     </div>
     <div class="fila2">
       <div class="campo-form autobox"><label>🏡 Campo</label><input id="fi-campo" placeholder="Campo" autocomplete="off" oninput="autocFi('campo',this)"><div class="sugerencias" id="sug-fi-campo"></div></div>
-      <div class="campo-form autobox"><label>📍 Lote</label><input id="fi-lote" placeholder="Lote" autocomplete="off" oninput="autocFi('lote',this)"><div class="sugerencias" id="sug-fi-lote"></div></div>
+      <div class="campo-form autobox"><label>📍 Lote</label><input id="fi-lote" placeholder="Lote" autocomplete="off" oninput="autocFi('lote',this)" onfocus="autocFi('lote',this)"><div class="sugerencias" id="sug-fi-lote"></div></div>
     </div>
     <h4 style="font-family:var(--display);font-size:15px;margin:14px 0 8px;border-bottom:1px solid var(--gris-cl);padding-bottom:4px">🌱 Orden de siembra</h4>
     <div class="fila2">
@@ -724,7 +724,7 @@
     <div class="tarjeta" style="padding:12px">
       <div class="campo-form autobox"><label>🏡 Campo</label><input id="ha-campo" placeholder="Campo" autocomplete="off" oninput="autocHa('campo',this)"><div class="sugerencias" id="sug-ha-campo"></div></div>
       <div class="fila2">
-        <div class="campo-form autobox"><label>📍 Lote</label><input id="ha-lote" placeholder="Lote" autocomplete="off" oninput="autocHa('lote',this)"><div class="sugerencias" id="sug-ha-lote"></div></div>
+        <div class="campo-form autobox"><label>📍 Lote</label><input id="ha-lote" placeholder="Lote" autocomplete="off" oninput="autocHa('lote',this)" onfocus="autocHa('lote',this)"><div class="sugerencias" id="sug-ha-lote"></div></div>
         <div class="campo-form"><label>Hectáreas</label><input id="ha-num" type="number" inputmode="decimal" step="0.1" placeholder="Ej: 85"></div>
       </div>
       <button class="btn" onclick="agregarHa()">+ Agregar / actualizar</button>
@@ -776,7 +776,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=12; // se incrementa en cada versión nueva
+const VERSION_APP=13; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -1073,8 +1073,8 @@ function autoc(campo,input){
     lista=valoresUnicos(campo);
   }
   if(v)lista=lista.filter(x=>norm(x).includes(v));
-  lista=lista.slice(0,8);
-  if(!lista.length||!input.value){cont.style.display='none';return;}
+  lista=lista.slice(0,30);
+  if(!lista.length){cont.style.display='none';return;}
   cont.innerHTML=lista.map(x=>`<div onmousedown="elegirSug('${campo}','${esc(x).replace(/'/g,"\\'")}')">${esc(x)}</div>`).join('');
   cont.style.display='block';
 }
@@ -1386,8 +1386,8 @@ function autocCambio(campo,input){
     lista=valoresUnicos(campo);
   }
   if(v)lista=lista.filter(x=>norm(x).includes(v));
-  lista=lista.slice(0,8);
-  if(!lista.length||!input.value){cont.style.display='none';return;}
+  lista=lista.slice(0,30);
+  if(!lista.length){cont.style.display='none';return;}
   cont.innerHTML=lista.map(x=>`<div onmousedown="$('cambio-${campo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-cambio-${campo}').style.display='none'">${esc(x)}</div>`).join('');
   cont.style.display='block';
 }
@@ -2036,8 +2036,8 @@ function autocHa(campo,input){
   const v=norm(input.value);
   let lista = campo==='lote' ? ($('ha-campo').value.trim()?lotesDelCampo($('ha-campo').value.trim()):valoresUnicos('lote')) : valoresUnicos('campo');
   if(v)lista=lista.filter(x=>norm(x).includes(v));
-  lista=lista.slice(0,8);
-  if(!lista.length||!input.value){cont.style.display='none';return;}
+  lista=lista.slice(0,30);
+  if(!lista.length){cont.style.display='none';return;}
   cont.innerHTML=lista.map(x=>`<div onmousedown="$('ha-${campo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-ha-${campo}').style.display='none'">${esc(x)}</div>`).join('');
   cont.style.display='block';
 }
@@ -2154,8 +2154,8 @@ function autocFi(tipo,input){
   const v=norm(input.value);
   let lista = tipo==='lote' ? ($('fi-campo').value.trim()?lotesHist($('fi-campo').value.trim()):valoresHist('lote')) : valoresHist(tipo);
   if(v)lista=lista.filter(x=>norm(x).includes(v));
-  lista=lista.slice(0,8);
-  if(!lista.length||!input.value){cont.style.display='none';return;}
+  lista=lista.slice(0,30);
+  if(!lista.length){cont.style.display='none';return;}
   cont.innerHTML=lista.map(x=>`<div onmousedown="$('fi-${tipo}').value='${esc(x).replace(/'/g,"\\'")}';$('sug-fi-${tipo}').style.display='none'">${esc(x)}</div>`).join('');
   cont.style.display='block';
 }
