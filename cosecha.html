@@ -782,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=16; // se incrementa en cada versión nueva
+const VERSION_APP=17; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -1295,7 +1295,7 @@ function pintarPanel(r){
   // Botón para cambiar lote/campo a mitad de carga (solo admin, solo camión)
   const zonaCambio=$('panel-cambio-lote');
   if(zonaCambio){
-    if(esCam && sesion.rol==='admin'){
+    if(sesion.rol==='admin'){
       zonaCambio.style.display='block';
       const desg=desgloseLotes(r);
       let htmlDesg='';
@@ -1303,7 +1303,7 @@ function pintarPanel(r){
         htmlDesg='<div style="margin-top:8px;font-size:12px;color:var(--gris)"><b>Cargado por lote:</b><br>'+
           desg.map(d=>`📍 ${esc(d.campo)} · ${esc(d.lote)}: <b>${nkg(d.kg)} kg</b>`).join('<br>')+'</div>';
       }
-      zonaCambio.innerHTML=`<button class="btn peq linea" style="width:100%" onclick="abrirCambioLote()">📍 Cambiar lote/campo (mismo camión)</button>${htmlDesg}`;
+      zonaCambio.innerHTML=`<button class="btn peq linea" style="width:100%" onclick="abrirCambioLote()">📍 Cambiar lote/campo (mismo ${esCam?'camión':'bolsón'})</button>${htmlDesg}`;
     }else{
       zonaCambio.style.display='none';
     }
@@ -1372,10 +1372,12 @@ function editarTolvaActiva(tid){
 /* ===== CAMBIO DE LOTE/CAMPO A MITAD DE UN CAMIÓN (solo admin) ===== */
 function abrirCambioLote(){
   if(sesion.rol!=='admin'||!abiertoActivoId)return;
-  const r=abiertos[abiertoActivoId]; if(!r||r.tipo!=='camion')return;
+  const r=abiertos[abiertoActivoId]; if(!r)return;
   const cargado=sumaTolvas(r);
-  const restan=(Number(r.total)||0)-cargado;
-  $('cambio-info').innerHTML=`Camión Nº${r.numDia||'?'} (${esc(r.patente||'')}). Ya lleva <b>${nkg(cargado)} kg</b>${restan>0?(', restan <b>'+nkg(restan)+' kg</b>'):''}. Las tolvas ya cargadas conservan su lote; las próximas irán al nuevo lote.`;
+  const esCam=r.tipo==='camion';
+  const restan=esCam?((Number(r.total)||0)-cargado):0;
+  const quien=esCam?('Camión Nº'+(r.numDia||'?')+' ('+esc(r.patente||'')+')'):('Bolsón '+esc(r.bolnombre||''));
+  $('cambio-info').innerHTML=`${quien}. Ya lleva <b>${nkg(cargado)} kg</b>${(esCam&&restan>0)?(', restan <b>'+nkg(restan)+' kg</b>'):''}. Las tolvas ya cargadas conservan su lote; las próximas irán al nuevo lote.`;
   $('cambio-campo').value=r.campo||'';
   $('cambio-lote').value='';
   abrir('modal-cambio-lote');
