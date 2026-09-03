@@ -782,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=17; // se incrementa en cada versión nueva
+const VERSION_APP=18; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -1993,14 +1993,40 @@ function datosRinde(anio){
   Object.values(hectareas[anio]||{}).forEach(e=>{ if(e&&e.campo&&e.lote)haLote[e.campo+'|||'+e.lote]=Number(e.ha)||0; });
   return {kgLote,cultivoLote,haLote};
 }
+let rindeF={campo:'',lote:'',cultivo:''}, rindeFAbierto=false;
 function rindeHTML(){
   const anios=aniosDisponibles();
   const {kgLote,cultivoLote,haLote}=datosRinde(anioRinde);
   const claves=Object.keys(kgLote);
   const sel=`<select onchange="anioRinde=this.value;renderResumen()" style="width:auto;padding:7px 10px;font-weight:700">${anios.map(a=>`<option ${a===anioRinde?'selected':''}>${a}</option>`).join('')}</select>`;
+
+  // opciones de filtro (sin filtrar, de toda la campaña)
+  const camposSet=new Set(), cultivosSet=new Set();
+  claves.forEach(k=>{ const [c]=k.split('|||'); camposSet.add(c); if(cultivoLote[k])cultivosSet.add(cultivoLote[k]); });
+  const lotesSet=new Set();
+  claves.forEach(k=>{ const [c,l]=k.split('|||'); if(!rindeF.campo||c===rindeF.campo)lotesSet.add(l); });
+  if(rindeF.campo&&![...camposSet].includes(rindeF.campo))rindeF.campo='';
+  if(rindeF.lote&&![...lotesSet].includes(rindeF.lote))rindeF.lote='';
+  const opt=(set,actual)=>[...set].sort((a,b)=>a.localeCompare(b)).map(x=>`<option ${x===actual?'selected':''}>${esc(x)}</option>`).join('');
+  const filtrosHTML=`<details class="filtros" ${rindeFAbierto?'open':''} ontoggle="rindeFAbierto=this.open">
+    <summary>🔍 Filtros del rinde</summary>
+    <div class="fila2">
+      <div class="campo-form"><label>Campo</label><select onchange="rindeF.campo=this.value;rindeF.lote='';renderResumen()"><option value="">Todos</option>${opt(camposSet,rindeF.campo)}</select></div>
+      <div class="campo-form"><label>Lote</label><select onchange="rindeF.lote=this.value;renderResumen()"><option value="">Todos</option>${opt(lotesSet,rindeF.lote)}</select></div>
+    </div>
+    <div class="fila2">
+      <div class="campo-form"><label>Cultivo</label><select onchange="rindeF.cultivo=this.value;renderResumen()"><option value="">Todos</option>${opt(cultivosSet,rindeF.cultivo)}</select></div>
+      <button class="btn peq gris" style="align-self:end;margin-bottom:12px" onclick="rindeF={campo:'',lote:'',cultivo:''};renderResumen()">Limpiar</button>
+    </div>
+  </details>`;
+
   let filasLote='', porCampo={}, porCultivo={}, sinHa=[];
   claves.sort((a,b)=>kgLote[b]-kgLote[a]).forEach(k=>{
     const [campo,lote]=k.split('|||');
+    // aplicar filtros
+    if(rindeF.campo&&campo!==rindeF.campo)return;
+    if(rindeF.lote&&lote!==rindeF.lote)return;
+    if(rindeF.cultivo&&(cultivoLote[k]||'')!==rindeF.cultivo)return;
     const kgV=kgLote[k], ha=haLote[k];
     if(ha>0){
       const rin=Math.round(kgV/ha);
@@ -2013,6 +2039,7 @@ function rindeHTML(){
       sinHa.push(campo+' · '+lote);
     }
   });
+  const hayFiltro=rindeF.campo||rindeF.lote||rindeF.cultivo;
   const bloque=(titulo,obj)=>{
     const arr=Object.entries(obj).sort((a,b)=>(b[1].kg/b[1].ha)-(a[1].kg/a[1].ha));
     if(!arr.length)return '';
@@ -2025,7 +2052,8 @@ function rindeHTML(){
       <h3 style="margin:0">🌾 Rinde (kg/ha) — Campaña ${sel}</h3>
       <button class="btn peq linea" onclick="abrirHa()">⚙️ Hectáreas</button>
     </div>
-    ${filasLote?`<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:10px 0 8px">Por lote</h4>${filasLote}`:'<p class="sub">Todavía no hay lotes con hectáreas cargadas para esta campaña. Tocá ⚙️ Hectáreas para cargarlas.</p>'}
+    ${filtrosHTML}
+    ${filasLote?`<h4 style="font-size:12px;text-transform:uppercase;color:var(--gris);letter-spacing:.4px;margin:10px 0 8px">Por lote</h4>${filasLote}`:(hayFiltro?'<p class="sub">Sin lotes con hectáreas para este filtro.</p>':'<p class="sub">Todavía no hay lotes con hectáreas cargadas para esta campaña. Tocá ⚙️ Hectáreas para cargarlas.</p>')}
     ${bloque('Por campo',porCampo)}
     ${bloque('Por cultivo',porCultivo)}
     ${sinHa.length?`<p class="sub" style="margin-top:10px">⚠️ Sin hectáreas cargadas (kilos sí registrados): ${sinHa.map(esc).join(', ')}</p>`:''}
