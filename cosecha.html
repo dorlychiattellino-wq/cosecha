@@ -782,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=18; // se incrementa en cada versión nueva
+const VERSION_APP=20; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -829,7 +829,7 @@ function iniciar(){
       try{ firebase.database().setPersistenceEnabled(true); }catch(e){}
       db=firebase.database();
       // Mantener sincronizadas estas ramas aunque se corte el internet
-      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); db.ref('hectareas').keepSynced(true); db.ref('historial').keepSynced(true); db.ref('cultivosClase').keepSynced(true); }catch(e){}
+      try{ db.ref('usuarios').keepSynced(true); db.ref('registros').keepSynced(true); db.ref('abiertos').keepSynced(true); db.ref('comunes').keepSynced(true); db.ref('hectareas').keepSynced(true); db.ref('historial').keepSynced(true); db.ref('cultivosClase').keepSynced(true); db.ref('filtros').keepSynced(true); }catch(e){}
       auth=firebase.auth();
       // Si ya hay sesión anónima guardada (de una entrada previa con señal), arranca aunque esté offline
       auth.onAuthStateChanged(u=>{ if(u){ firebaseOK=true; escucharConexion(); escucharDatos(); } });
@@ -875,6 +875,15 @@ function escucharDatos(){
   db.ref('hectareas').on('value',s=>{hectareas=s.val()||{}; if($('v-resumen').classList.contains('activa'))renderResumen();});
   db.ref('historial').on('value',s=>{historial=s.val()||{}; if($('v-historial')&&$('v-historial').classList.contains('activa'))renderHistorial();});
   db.ref('cultivosClase').on('value',s=>{cultivosClase=s.val()||{}; if($('v-historial')&&$('v-historial').classList.contains('activa'))renderHistorial();});
+  // filtros compartidos: cuando un admin filtra, todos los admins ven lo mismo
+  db.ref('filtros').on('value',s=>{
+    const o=s.val(); if(!o)return;
+    const j=JSON.stringify(o);
+    if(j===ultimoFiltrosJSON)return; // es el eco de mi propio cambio: ignorar
+    ultimoFiltrosJSON=j;
+    aplicarFiltrosCompartidos(o);
+    if(sesion&&sesion.rol==='admin'){ renderCosechado(); renderResumen(); renderHistorial(); }
+  });
   // Control de versión: si esta copia es la más nueva, la registra; si hay una más nueva, avisa
   db.ref('versionApp').on('value',s=>{
     const enServidor=Number(s.val())||0;
@@ -940,6 +949,41 @@ function leerSesionLocal(){ try{return JSON.parse(localStorage.getItem('cosecha_
 function guardarSesionLocal(){ try{localStorage.setItem('cosecha_sesion',JSON.stringify({nombre:sesion.nombre,rol:sesion.rol}));}catch(e){} }
 function borrarSesionLocal(){ try{localStorage.removeItem('cosecha_sesion');}catch(e){} }
 
+/* ---- filtros compartidos entre admins (viven en Firebase, como la pizarra de Carga) ---- */
+let pendFiltros={}, ultimoFiltrosJSON='';
+function pendF(id){ if(id in pendFiltros){const v=pendFiltros[id]; delete pendFiltros[id]; return v;} return undefined; }
+function guardarFiltrosLocal(){
+  try{
+    if(!sesion||sesion.rol!=='admin'||!db)return;
+    const ids=['f-desde','f-hasta','f-campo','f-lote','f-cultivo','f-tipo','f-user','h-f-campania','h-f-campo','h-f-lote','h-f-cultivo','r-desde','r-hasta'];
+    const o={v:{}};
+    ids.forEach(i=>{const el=$(i); if(el)o.v[i]=el.value;});
+    o.periodo=periodo; o.anioRinde=anioRinde; o.rindeF=rindeF; o.rindeFAbierto=rindeFAbierto;
+    const j=JSON.stringify(o);
+    if(j===ultimoFiltrosJSON)return; // sin cambios: no escribir (evita bucles de sincronización)
+    ultimoFiltrosJSON=j;
+    db.ref('filtros').set(o);
+  }catch(e){}
+}
+function aplicarFiltrosCompartidos(o){
+  try{
+    if(!o)return;
+    pendFiltros={...(o.v||{})};
+    // campos de fecha y selects fijos: se aplican directo
+    ['f-desde','f-hasta','r-desde','r-hasta','f-tipo'].forEach(i=>{
+      if(pendFiltros[i]!==undefined){const el=$(i); if(el)el.value=pendFiltros[i]; delete pendFiltros[i];}
+    });
+    if(o.periodo){
+      periodo=o.periodo;
+      document.querySelectorAll('#periodo-sel button').forEach(b=>b.classList.toggle('activo',b.dataset.p===periodo));
+      const rb=$('rango-box'); if(rb)rb.style.display=periodo==='rango'?'grid':'none';
+    }
+    if(o.anioRinde)anioRinde=o.anioRinde;
+    if(o.rindeF)rindeF={campo:o.rindeF.campo||'',lote:o.rindeF.lote||'',cultivo:o.rindeF.cultivo||''};
+    if(typeof o.rindeFAbierto==='boolean')rindeFAbierto=o.rindeFAbierto;
+  }catch(e){}
+}
+
 function refrescarSesion(){
   if(!sesion)return;
   const ent=buscarUserPorNombre(sesion.nombre);
@@ -1003,6 +1047,7 @@ function salir(silencioso){
 
 function entrarApp(){
   $('app').style.display='block';
+  if(ultimoFiltrosJSON){try{aplicarFiltrosCompartidos(JSON.parse(ultimoFiltrosJSON));}catch(e){}}
   $('user-nombre').textContent=sesion.nombre;
   const esAdmin=sesion.rol==='admin';
   $('user-rol').textContent=esAdmin?'Admin':'Operario';
@@ -1493,17 +1538,18 @@ function llenarSelect(id,valores,actual){
 }
 function prepararFiltrosCos(){
   $('f-campo').dataset.todos='Todos'; $('f-lote').dataset.todos='Todos'; $('f-cultivo').dataset.todos='Todos'; $('f-user').dataset.todos='Todos';
-  llenarSelect('f-campo',valoresUnicos('campo'));
+  llenarSelect('f-campo',valoresUnicos('campo'),pendF('f-campo'));
   actualizarFiltroLotes();
-  llenarSelect('f-cultivo',valoresUnicos('cultivo'));
+  llenarSelect('f-cultivo',valoresUnicos('cultivo'),pendF('f-cultivo'));
   const users=new Set(); Object.values(registros).forEach(r=>(r.participantes||[]).forEach(p=>users.add(p)));
-  llenarSelect('f-user',[...users].sort());
+  llenarSelect('f-user',[...users].sort(),pendF('f-user'));
 }
 // El desplegable de Lote muestra solo los lotes del campo elegido en el filtro
 function actualizarFiltroLotes(){
   const campoSel=$('f-campo').value;
   const lotes = campoSel ? lotesDelCampo(campoSel) : valoresUnicos('lote');
-  const actual=$('f-lote').value;
+  const guardado=pendF('f-lote');
+  const actual=guardado!==undefined?guardado:$('f-lote').value;
   // si el lote elegido no pertenece al campo nuevo, se limpia
   llenarSelect('f-lote',lotes, lotes.includes(actual)?actual:'');
 }
@@ -1745,6 +1791,7 @@ function renderCosechado(){
     </div>`;
   }).join('');
   actualizarCuentaSel();
+  guardarFiltrosLocal();
 }
 
 function clickRegistro(e,id,idx){
@@ -1968,6 +2015,7 @@ function renderResumen(){
     ${grupoPorTolva('lote','📍 Por lote (campo · lote)','t3')}
     ${grupo('fecha','📅 Por fecha','t4')}
     ${rindeHTML()}`;
+  guardarFiltrosLocal();
 }
 
 /* =================== RINDE (kg/ha) POR CAMPAÑA =================== */
@@ -2315,7 +2363,8 @@ function lotesFichasDeCampo(campo){
 function actualizarFiltroLoteHist(){
   const campo=$('h-f-campo').value;
   const lotes=lotesFichasDeCampo(campo);
-  const actual=$('h-f-lote').value;
+  const guardado=pendF('h-f-lote');
+  const actual=guardado!==undefined?guardado:$('h-f-lote').value;
   $('h-f-lote').dataset.todos='Todos';
   llenarSelect('h-f-lote',lotes, lotes.includes(actual)?actual:'');
 }
@@ -2344,9 +2393,9 @@ function renderHistorial(){
   llenarDatalists();
   // llenar selects de filtros conservando la selección
   $('h-f-campania').dataset.todos='Todas'; $('h-f-campo').dataset.todos='Todos'; $('h-f-cultivo').dataset.todos='Todos';
-  llenarSelect('h-f-campania',[...new Set(Object.values(historial).map(f=>f.campania).filter(Boolean))].sort().reverse());
-  llenarSelect('h-f-campo',[...new Set(Object.values(historial).map(f=>f.campo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
-  llenarSelect('h-f-cultivo',[...new Set(Object.values(historial).map(f=>f.cultivo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
+  llenarSelect('h-f-campania',[...new Set(Object.values(historial).map(f=>f.campania).filter(Boolean))].sort().reverse(),pendF('h-f-campania'));
+  llenarSelect('h-f-campo',[...new Set(Object.values(historial).map(f=>f.campo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),pendF('h-f-campo'));
+  llenarSelect('h-f-cultivo',[...new Set(Object.values(historial).map(f=>f.cultivo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),pendF('h-f-cultivo'));
   actualizarFiltroLoteHist();
   const fichas=fichasFiltradas();
   const cont=$('hist-lista');
@@ -2403,6 +2452,7 @@ function renderHistorial(){
       </div>
     </div>`;
   }).join('');
+  guardarFiltrosLocal();
 }
 
 /* ---- PDF del historial (según filtros) ---- */
