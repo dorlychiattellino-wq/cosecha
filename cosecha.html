@@ -782,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=20; // se incrementa en cada versión nueva
+const VERSION_APP=21; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -957,7 +957,9 @@ function guardarFiltrosLocal(){
     if(!sesion||sesion.rol!=='admin'||!db)return;
     const ids=['f-desde','f-hasta','f-campo','f-lote','f-cultivo','f-tipo','f-user','h-f-campania','h-f-campo','h-f-lote','h-f-cultivo','r-desde','r-hasta'];
     const o={v:{}};
-    ids.forEach(i=>{const el=$(i); if(el)o.v[i]=el.value;});
+    // si un filtro está pendiente de aplicarse en pantalla (ej: Historial todavía no se dibujó),
+    // se conserva su valor pendiente en vez de leer el select vacío — evita pisar filtros de otros admins
+    ids.forEach(i=>{const el=$(i); o.v[i]=(i in pendFiltros)?pendFiltros[i]:(el?el.value:'');});
     o.periodo=periodo; o.anioRinde=anioRinde; o.rindeF=rindeF; o.rindeFAbierto=rindeFAbierto;
     const j=JSON.stringify(o);
     if(j===ultimoFiltrosJSON)return; // sin cambios: no escribir (evita bucles de sincronización)
