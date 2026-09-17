@@ -782,7 +782,7 @@
 <script>
 /* =================== ESTADO =================== */
 let db=null, auth=null, firebaseOK=false;
-const VERSION_APP=21; // se incrementa en cada versión nueva
+const VERSION_APP=22; // se incrementa en cada versión nueva
 let usuarios={}, registros={}, abiertos={}, comunes={}, hectareas={}, historial={}, cultivosClase={};
 let anioRinde=String(new Date().getFullYear());
 let sesion=null;          // {nombre, rol:'admin'|'invitado'}
@@ -2311,7 +2311,7 @@ function abrirFicha(id){
 function guardarFicha(){
   const campania=$('fi-campania').value.trim();
   const campo=$('fi-campo').value.trim(), lote=$('fi-lote').value.trim(), cultivo=$('fi-cultivo').value.trim();
-  if(!/^\d{4}\/\d{4}$/.test(campania))return toast('Campaña con formato 2025/2026');
+  if(!/^\d{4}\/\d{4}$/.test(campania))return toast('⚠️ La campaña va con años completos, ej: 2023/2024 (revisá arriba del formulario)');
   if(!campo)return toast('Poné el campo');
   if(!lote)return toast('Poné el lote');
   if(!cultivo)return toast('Poné el cultivo');
@@ -2338,6 +2338,11 @@ function guardarFicha(){
     creado:prev.creado||Date.now()
   };
   guardar('historial/'+id,f,'Ficha guardada');
+  // que la ficha recién guardada siempre quede visible: si algún filtro la esconde, se limpia solo
+  if($('h-f-campania').value&&$('h-f-campania').value!==campania)$('h-f-campania').value='';
+  if($('h-f-campo').value&&normx($('h-f-campo').value)!==normx(campo))$('h-f-campo').value='';
+  if($('h-f-lote').value&&normx($('h-f-lote').value)!==normx(lote))$('h-f-lote').value='';
+  if($('h-f-cultivo').value&&normx($('h-f-cultivo').value)!==normx(cultivo))$('h-f-cultivo').value='';
   cerrar('modal-ficha');
   setTimeout(renderHistorial,300);
 }
